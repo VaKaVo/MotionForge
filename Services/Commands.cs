@@ -15,6 +15,7 @@ public interface IAppShell
     void ImportImage();
     void ShowExportDialog();
     void ShowStageSettings();
+    void ShowSettings();
     void ShowCommandPalette();
     void ShowHelp();
     void ShowAbout();
@@ -129,6 +130,7 @@ public static class Commands
             s.Store.SetSelection(ids);
         });
         Add("edit.deselect", "Правка", "Снять выделение", "Ctrl+Shift+A", s => s.Store.ClearSelection(), s => s.Store.Selection.Count > 0);
+        Add("edit.settings", "Правка", "Настройки…", "Ctrl+OemComma", s => s.ShowSettings());
     }
 
     private static void BuildFrames()

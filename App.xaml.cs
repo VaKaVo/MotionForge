@@ -16,6 +16,13 @@ public partial class App : Application
         // в headless-тестах используется встроенная аппроксимация.
         Anim.TextMeasurer = new WpfTextMeasurer();
 
+        // Пользовательские настройки: язык интерфейса, сетка, планшет, автосохранение.
+        AppSettings.Current = AppSettings.Load().Normalized();
+        L10n.SetLanguage(AppSettings.Current.Language);
+
+        if (e.Args.Any(a => string.Equals(a, "--lang-template", StringComparison.OrdinalIgnoreCase)))
+            L10n.TemplateRequested = true;
+
         if (e.Args.Any(a => string.Equals(a, "--selftest", StringComparison.OrdinalIgnoreCase)))
         {
             Environment.ExitCode = SelfTest.Run();

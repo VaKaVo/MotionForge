@@ -280,4 +280,61 @@ public static class Geo
         if (step <= 0) return value;
         return Math.Round(value / step) * step;
     }
+
+    /// <summary>
+    /// Переносит профиль толщины с исходной ломаной на упрощённую (после <see cref="Simplify"/>):
+    /// каждая точка цели получает толщину в том же месте по длине пути.
+    /// </summary>
+    public static List<double> WidthsAlong(IList<Vec> source, IList<double> widths, IList<Vec> target)
+    {
+        var result = new List<double>(target?.Count ?? 0);
+        if (source == null || widths == null || target == null || source.Count < 2) return result;
+        if (widths.Count != source.Count) return result;
+
+        var cumulative = new double[source.Count];
+        for (int i = 1; i < source.Count; i++)
+            cumulative[i] = cumulative[i - 1] + (source[i] - source[i - 1]).Length;
+        double total = cumulative[source.Count - 1];
+        if (total <= 1e-9)
+        {
+            for (int i = 0; i < target.Count; i++) result.Add(widths[0]);
+            return result;
+        }
+
+        foreach (Vec p in target)
+        {
+            int bestSegment = 0;
+            double bestDistance = double.MaxValue;
+            double bestT = 0;
+            for (int i = 0; i < source.Count - 1; i++)
+            {
+                Vec a = source[i], b = source[i + 1];
+                Vec ab = b - a;
+                double len2 = ab.X * ab.X + ab.Y * ab.Y;
+                double t = len2 <= 1e-12 ? 0 : ((p.X - a.X) * ab.X + (p.Y - a.Y) * ab.Y) / len2;
+                t = Math.Max(0, Math.Min(1, t));
+                double dx = a.X + ab.X * t - p.X;
+                double dy = a.Y + ab.Y * t - p.Y;
+                double d = dx * dx + dy * dy;
+                if (d < bestDistance) { bestDistance = d; bestSegment = i; bestT = t; }
+            }
+            double arc = cumulative[bestSegment] + bestT * (cumulative[bestSegment + 1] - cumulative[bestSegment]);
+            result.Add(WidthAt(widths, cumulative, arc));
+        }
+        return result;
+    }
+
+    private static double WidthAt(IList<double> widths, double[] cumulative, double arc)
+    {
+        if (arc <= 0) return widths[0];
+        if (arc >= cumulative[cumulative.Length - 1]) return widths[widths.Count - 1];
+        for (int i = 0; i < cumulative.Length - 1; i++)
+        {
+            if (arc > cumulative[i + 1]) continue;
+            double span = cumulative[i + 1] - cumulative[i];
+            double t = span <= 1e-12 ? 0 : (arc - cumulative[i]) / span;
+            return widths[i] + (widths[i + 1] - widths[i]) * t;
+        }
+        return widths[widths.Count - 1];
+    }
 }

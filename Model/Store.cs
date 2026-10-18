@@ -55,6 +55,7 @@ public class Store
     public int OnionBefore = 1;
     public int OnionAfter = 1;
     public bool GridOn;
+    public bool SnapToGrid;
     public bool OutlineAll;
     public bool Playing;
     public bool Loop = true;
@@ -74,7 +75,7 @@ public class Store
         ResetHistory();
     }
 
-    public const double GridSize = 40;
+    public static double GridSize = 40;
 
     /* ------------------------------------------------------------------ */
     /*  Доступ к активной сцене                                            */

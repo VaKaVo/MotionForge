@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -27,6 +27,9 @@ public class StageView : Canvas
     private bool _spaceDown;
     private TextBox _textEditor;
     private TextElement _editingText;
+    private bool _stylusDrawing;
+    private bool _stylusErase;
+    private string _toolBeforeStylus;
 
     public event Action<Vec, Point> WorldMouseMoved;
     public event Action<Vec, Point> RightClicked;
@@ -205,6 +208,156 @@ public class StageView : Canvas
         _ctx.Px = Px;
         _ctx.Mods = mods;
         _ctx.Invalidate = InvalidateVisual;
+        _ctx.FromStylus = false;
+        _ctx.Pressure = 1;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  Планшет: перо обрабатывается отдельно от мыши                      */
+    /* ------------------------------------------------------------------ */
+
+    private AppSettings Settings => AppSettings.Current;
+
+    /// <summary>Можно ли рисовать этим устройством (палец/тач отсекаем при включённой защите).</summary>
+    private bool StylusUsable(StylusDevice pen)
+    {
+        if (!Settings.TabletEnabled) return false;
+        var device = pen?.TabletDevice;
+        if (device != null && device.Type == TabletDeviceType.Touch && Settings.TabletIgnoreTouch) return false;
+        return true;
+    }
+
+    /// <summary>Сила нажатия из набора точек (0.05…1). Нули драйверов трактуем как «нажатие не поддерживается».</summary>
+    private double PressureOf(StylusPointCollection points)
+    {
+        if (!Settings.TabletPressure || points == null || points.Count == 0) return 1;
+        float p = points[points.Count - 1].PressureFactor;
+        if (float.IsNaN(p) || p <= 0.02f) return 1;
+        return Math.Min(1, Math.Max(0.05, p));
+    }
+
+    protected override void OnStylusDown(StylusDownEventArgs e)
+    {
+        base.OnStylusDown(e);
+        if (Store == null || _stylusDrawing) return;
+        if (_textEditor != null && e.OriginalSource is TextBox) return;
+        if (!StylusUsable(e.StylusDevice)) return;
+
+        Focus();
+        SyncContext(Keyboard.Modifiers);
+        _ctx.FromStylus = true;
+
+        StylusPointCollection points = e.GetStylusPoints(this);
+        _ctx.Pressure = PressureOf(points);
+        Point screen = points.Count > 0 ? points[points.Count - 1].ToPoint() : new Point(0, 0);
+        _mouseScreen = screen;
+        _hasMouse = true;
+        Vec world = ToWorld(screen);
+
+        // Перевёрнутое перо — ластик, как в Animate/Photoshop.
+        _stylusErase = e.StylusDevice != null && e.StylusDevice.Inverted;
+        if (_stylusErase && Store.ToolId != "eraser")
+        {
+            _toolBeforeStylus = Store.ToolId;
+            Store.SetTool("eraser");
+        }
+
+        _stylusDrawing = true;
+        if (_spaceDown)
+        {
+            BeginPan(screen);
+        }
+        else
+        {
+            CommitTextEdit();
+            CaptureStylus();
+            CurrentTool.Down(_ctx, world, false);
+        }
+        InvalidateVisual();
+        e.Handled = true;   // не даём WPF превратить перо в обычную мышь
+    }
+
+    protected override void OnStylusMove(StylusEventArgs e)
+    {
+        base.OnStylusMove(e);
+        if (Store == null) return;
+        if (!_stylusDrawing)
+        {
+            if (!StylusUsable(e.StylusDevice)) return;
+            StylusPointCollection hoverPoints = e.GetStylusPoints(this);
+            if (hoverPoints.Count > 0)
+            {
+                _mouseScreen = hoverPoints[hoverPoints.Count - 1].ToPoint();
+                _hasMouse = true;
+                WorldMouseMoved?.Invoke(ToWorld(_mouseScreen), _mouseScreen);
+                InvalidateVisual();
+            }
+            e.Handled = true;
+            return;
+        }
+
+        StylusPointCollection points = e.GetStylusPoints(this);
+        _ctx.Pressure = PressureOf(points);
+        if (points.Count > 0)
+        {
+            _mouseScreen = points[points.Count - 1].ToPoint();
+            _hasMouse = true;
+        }
+        Vec world = ToWorld(_mouseScreen);
+
+        if (_panning)
+        {
+            double dx = _mouseScreen.X - _panStartScreen.X;
+            double dy = _mouseScreen.Y - _panStartScreen.Y;
+            Store.SetPan(_panStartX + dx, _panStartY + dy);
+        }
+        else
+        {
+            CurrentTool.Move(_ctx, world);
+        }
+        InvalidateVisual();
+        e.Handled = true;
+    }
+
+    protected override void OnStylusUp(StylusEventArgs e)
+    {
+        base.OnStylusUp(e);
+        if (Store == null || !_stylusDrawing) return;
+        _stylusDrawing = false;
+
+        if (_panning)
+        {
+            EndPan();
+        }
+        else
+        {
+            ReleaseStylusCapture();
+            StylusPointCollection points = e.GetStylusPoints(this);
+            _ctx.Pressure = PressureOf(points);
+            if (points.Count > 0) _mouseScreen = points[points.Count - 1].ToPoint();
+            CurrentTool.Up(_ctx, ToWorld(_mouseScreen));
+        }
+
+        if (_stylusErase && !string.IsNullOrEmpty(_toolBeforeStylus))
+        {
+            Store.SetTool(_toolBeforeStylus);
+            _toolBeforeStylus = null;
+        }
+        _stylusErase = false;
+        _ctx.FromStylus = false;
+        _ctx.Pressure = 1;
+        InvalidateVisual();
+        e.Handled = true;
+    }
+
+    protected override void OnStylusLeave(StylusEventArgs e)
+    {
+        base.OnStylusLeave(e);
+        if (!_stylusDrawing)
+        {
+            _hasMouse = false;
+            InvalidateVisual();
+        }
     }
 
     protected override void OnMouseDown(MouseButtonEventArgs e)

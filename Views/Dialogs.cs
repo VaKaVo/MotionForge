@@ -27,12 +27,21 @@ public abstract class DialogBase : Window
 
     protected DialogBase(string title, double width = 440)
     {
-        Title = "MotionForge — " + title;
+        Title = "MotionForge — " + L10n.T(title);
         Width = width;
         SizeToContent = SizeToContent.Height;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
+
+        // Неявный стиль Window из темы не применяется к наследникам,
+        // поэтому тёмный фон задаём окну явно (иначе диалог был бы белым).
+        Background = (Brush)Application.Current.Resources["Bg"];
+        Foreground = (Brush)Application.Current.Resources["Txt"];
+        FontFamily = new FontFamily("Segoe UI");
+        FontSize = 11.5;
+        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+        UseLayoutRounding = true;
 
         Body.Margin = new Thickness(18, 18, 18, 6);
         var scroll = new ScrollViewer
@@ -52,7 +61,7 @@ public abstract class DialogBase : Window
     {
         return new TextBlock
         {
-            Text = text,
+            Text = L10n.T(text),
             FontSize = 16.5,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 10),
@@ -63,7 +72,7 @@ public abstract class DialogBase : Window
     {
         return new TextBlock
         {
-            Text = text,
+            Text = L10n.T(text),
             TextWrapping = TextWrapping.Wrap,
             Foreground = (Brush)Application.Current.Resources["TxtDim"],
             Margin = new Thickness(0, 0, 0, 8),
@@ -72,7 +81,7 @@ public abstract class DialogBase : Window
 
     protected static TextBlock FieldLabel(string text)
     {
-        return new TextBlock { Text = text, Margin = new Thickness(0, 8, 0, 3), Foreground = (Brush)Application.Current.Resources["TxtDim"] };
+        return new TextBlock { Text = L10n.T(text), Margin = new Thickness(0, 8, 0, 3), Foreground = (Brush)Application.Current.Resources["TxtDim"] };
     }
 
     protected void AddButtons(params UIElement[] buttons)
@@ -90,7 +99,7 @@ public abstract class DialogBase : Window
     {
         var button = new Button
         {
-            Content = text,
+            Content = L10n.T(text),
             Style = (Style)Application.Current.Resources["BtnPrimary"],
             MinWidth = 96,
             IsDefault = isDefault,
@@ -103,7 +112,7 @@ public abstract class DialogBase : Window
     {
         var button = new Button
         {
-            Content = text,
+            Content = L10n.T(text),
             Style = (Style)Application.Current.Resources["Btn"],
             MinWidth = 96,
             IsCancel = onClick == null,
@@ -177,9 +186,9 @@ public class SymbolDialog : DialogBase
 
         Body.Children.Add(FieldLabel("Тип"));
         _kind = new ComboBox { Width = 240, HorizontalAlignment = HorizontalAlignment.Left };
-        _kind.Items.Add(new ComboBoxItem { Content = "Графический символ — кадры задаёт родитель", Tag = "Graphic" });
-        _kind.Items.Add(new ComboBoxItem { Content = "Клип — своя временная шкала (по умолчанию)", Tag = "MovieClip" });
-        _kind.Items.Add(new ComboBoxItem { Content = "Кнопка — для интерактивных элементов", Tag = "Button" });
+        _kind.Items.Add(new ComboBoxItem { Content = UiKit.T("Графический символ — кадры задаёт родитель"), Tag = "Graphic" });
+        _kind.Items.Add(new ComboBoxItem { Content = UiKit.T("Клип — своя временная шкала (по умолчанию)"), Tag = "MovieClip" });
+        _kind.Items.Add(new ComboBoxItem { Content = UiKit.T("Кнопка — для интерактивных элементов"), Tag = "Button" });
         _kind.SelectedIndex = 1;
         Body.Children.Add(_kind);
 
@@ -216,7 +225,7 @@ public class StageSettingsDialog : DialogBase
         Body.Children.Add(FieldLabel("Цвет фона сцены"));
         Body.Children.Add(UiKit.Row(background, new TextBlock
         {
-            Text = "Прозрачный фон задаётся при экспорте",
+            Text = UiKit.T("Прозрачный фон задаётся при экспорте"),
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = (Brush)Application.Current.Resources["TxtDim"],
             Margin = new Thickness(8, 0, 0, 0),
@@ -296,11 +305,11 @@ public class ExportDialog : DialogBase
 
         left.Children.Add(FieldLabel("Формат"));
         _format = new ComboBox { Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
-        _format.Items.Add(new ComboBoxItem { Content = "PNG — текущий кадр", Tag = "png" });
-        _format.Items.Add(new ComboBoxItem { Content = "GIF — анимация со всеми кадрами", Tag = "gif" });
-        _format.Items.Add(new ComboBoxItem { Content = "Спрайт-лист (одна картинка)", Tag = "sheet" });
-        _format.Items.Add(new ComboBoxItem { Content = "PNG-последовательность", Tag = "seq" });
-        _format.Items.Add(new ComboBoxItem { Content = "SVG — векторный кадр", Tag = "svg" });
+        _format.Items.Add(new ComboBoxItem { Content = UiKit.T("PNG — текущий кадр"), Tag = "png" });
+        _format.Items.Add(new ComboBoxItem { Content = UiKit.T("GIF — анимация со всеми кадрами"), Tag = "gif" });
+        _format.Items.Add(new ComboBoxItem { Content = UiKit.T("Спрайт-лист (одна картинка)"), Tag = "sheet" });
+        _format.Items.Add(new ComboBoxItem { Content = UiKit.T("PNG-последовательность"), Tag = "seq" });
+        _format.Items.Add(new ComboBoxItem { Content = UiKit.T("SVG — векторный кадр"), Tag = "svg" });
         _format.SelectedIndex = 1;
         _format.SelectionChanged += (s, e) => FormatChanged();
         left.Children.Add(_format);
@@ -410,7 +419,7 @@ public class ExportDialog : DialogBase
         string path = ChoosePath();
         if (path == null) return;
 
-        _doneText.Text = "";
+        _doneText.Text = UiKit.T("");
         _progress.Value = 0;
         _progress.Visibility = Visibility.Visible;
         _progressText.Visibility = Visibility.Visible;
@@ -420,7 +429,7 @@ public class ExportDialog : DialogBase
         Action<int, int> progress = (done, total) =>
         {
             _progress.Value = total <= 0 ? 0 : done * 100.0 / total;
-            _progressText.Text = "Кадр " + done + " из " + total;
+            _progressText.Text = UiKit.T("Кадр ") + done + " из " + total;
             Pump();
         };
         Func<bool> cancelled = () => _cancelled;
@@ -446,23 +455,23 @@ public class ExportDialog : DialogBase
                     if (_makeVideo && files.Count > 0)
                     {
                         string video = Path.ChangeExtension(path, ".mp4");
-                        _progressText.Text = "Сборка видео через ffmpeg…";
+                        _progressText.Text = UiKit.T("Сборка видео через ffmpeg…");
                         Pump();
                         if (Exporter.TryMakeVideo(files[0], _fps, video, out string log))
-                            _doneText.Text = "Видео готово: " + video;
+                            _doneText.Text = UiKit.T("Видео готово: ") + video;
                         else
-                            _doneText.Text = "ffmpeg недоступен, кадры сохранены. " + Shorten(log);
+                            _doneText.Text = UiKit.T("ffmpeg недоступен, кадры сохранены. ") + Shorten(log);
                     }
                     else
                     {
-                        _doneText.Text = "Сохранено кадров: " + files.Count;
+                        _doneText.Text = UiKit.T("Сохранено кадров: ") + files.Count;
                     }
                     break;
             }
 
             if (_cancelled)
             {
-                _doneText.Text = "Экспорт отменён.";
+                _doneText.Text = UiKit.T("Экспорт отменён.");
             }
             else
             {
@@ -474,7 +483,7 @@ public class ExportDialog : DialogBase
         catch (Exception ex)
         {
             _doneText.Foreground = (Brush)Application.Current.Resources["Err"];
-            _doneText.Text = "Ошибка экспорта: " + ex.Message;
+            _doneText.Text = UiKit.T("Ошибка экспорта: ") + ex.Message;
         }
         finally
         {
@@ -603,10 +612,10 @@ public class CommandPaletteWindow : DialogBase
             var grid = new Grid { Width = 480 };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var title = new TextBlock { Text = command.Title };
+            var title = new TextBlock { Text = L10n.T(command.Title) };
             var group = new TextBlock
             {
-                Text = command.Group + (string.IsNullOrEmpty(command.Keys) ? "" : "   " + command.Keys),
+                Text = L10n.T(command.Group) + (string.IsNullOrEmpty(command.Keys) ? "" : "   " + command.Keys),
                 Foreground = (Brush)Application.Current.Resources["TxtDim"],
                 FontSize = 11,
                 HorizontalAlignment = HorizontalAlignment.Right,
@@ -660,7 +669,7 @@ public class HelpWindow : DialogBase
 
         Body.Children.Add(new TextBlock
         {
-            Text = "Мышь: колесо — прокрутка, Ctrl+колесо — масштаб, средняя кнопка или пробел — панорама. " +
+            Text = UiKit.T("Мышь: колесо — прокрутка, Ctrl+колесо — масштаб, средняя кнопка или пробел — панорама. ") +
                    "Протяжка по числовому полю меняет значение (Shift — быстрее, Alt — точнее).",
             TextWrapping = TextWrapping.Wrap,
             Foreground = (Brush)Application.Current.Resources["TxtDim"],
@@ -683,7 +692,7 @@ public class HelpWindow : DialogBase
             var row = new Grid();
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var title = new TextBlock { Text = command.Title, TextWrapping = TextWrapping.Wrap };
+            var title = new TextBlock { Text = L10n.T(command.Title), TextWrapping = TextWrapping.Wrap };
             var keys = new TextBlock
             {
                 Text = command.Keys ?? "",
@@ -712,7 +721,7 @@ public class AboutWindow : DialogBase
 
         Body.Children.Add(new TextBlock
         {
-            Text = "Возможности\n" +
+            Text = UiKit.T("Возможности\n") +
                    "  ·  Слои, кадры, ключевые кадры и классические твины с плавностью\n" +
                    "  ·  Символы (графические, клипы, кнопки) и библиотека с предпросмотром\n" +
                    "  ·  Рисование: карандаш, кисть, перо, фигуры, заливка, ластик, пипетка\n" +
@@ -731,10 +740,166 @@ public class AboutWindow : DialogBase
 
         Body.Children.Add(new TextBlock
         {
-            Text = "Версия 1.0  ·  .NET 10 / WPF  ·  " + Environment.OSVersion.VersionString,
+            Text = UiKit.T("Версия 1.0  ·  .NET 10 / WPF  ·  ") + Environment.OSVersion.VersionString,
             Foreground = (Brush)Application.Current.Resources["TxtDim"],
         });
 
         AddButtons(Secondary("Закрыть"));
+    }
+}
+
+/* ===================================================================== */
+/*  Настройки                                                             */
+/* ===================================================================== */
+
+/// <summary>Единое окно настроек: язык, сцена, луковая кожа, рисование, планшет, автосохранение.</summary>
+public class SettingsDialog : DialogBase
+{
+    private AppSettings _draft;
+    private readonly Action<AppSettings> _preview;
+
+    public AppSettings Result { get; private set; }
+
+    public SettingsDialog(AppSettings current, Action<AppSettings> preview = null)
+        : base("Настройки", 560)
+    {
+        _draft = (current ?? new AppSettings()).Clone();
+        _preview = preview;
+        Build();
+    }
+
+    private void Build()
+    {
+        Body.Children.Clear();
+        Body.Children.Add(Heading("Настройки"));
+        Body.Children.Add(Paragraph("Настройки хранятся в файле %APPDATA%\\MotionForge\\settings.json " +
+                                     "и применяются сразу после нажатия «Готово»."));
+
+        /* ---------------------------- общие ---------------------------- */
+        AddSection("Общие");
+        AddRow("Язык интерфейса", UiKit.Combo(
+            L10n.Languages().Select(l => (l.Code, l.Name)).ToList(),
+            _draft.Language,
+            value => { _draft.Language = value; if (_preview != null) { _preview(_draft); Build(); } },
+            210));
+        AddCheck("Подсказки в строке состояния", _draft.ShowStatusHints, v => _draft.ShowStatusHints = v);
+        AddCheck("Спрашивать при выходе с несохранёнными изменениями", _draft.ConfirmOnExit, v => _draft.ConfirmOnExit = v);
+
+        /* ---------------------------- сцена ---------------------------- */
+        AddSection("Сцена");
+        AddCheck("Показывать сетку", _draft.GridOn, v => _draft.GridOn = v);
+        AddRow("Шаг сетки", UiKit.Number(_draft.GridStep, v => _draft.GridStep = v, 5, 78, 2, 400));
+        AddCheck("Привязывать новые фигуры к сетке", _draft.SnapToGrid, v => _draft.SnapToGrid = v);
+        AddCheck("Показывать только контуры объектов", _draft.OutlineAll, v => _draft.OutlineAll = v);
+
+        /* ------------------------ луковая кожа ------------------------- */
+        AddSection("Луковая кожа");
+        AddCheck("Показывать соседние кадры", _draft.OnionOn, v => _draft.OnionOn = v);
+        AddRow("Кадров до и после",
+            UiKit.Number(_draft.OnionBefore, v => _draft.OnionBefore = (int)Math.Round(v), 1, 60, 0, 5),
+            UiKit.Number(_draft.OnionAfter, v => _draft.OnionAfter = (int)Math.Round(v), 1, 60, 0, 5));
+
+        /* --------------------------- рисование ------------------------- */
+        AddSection("Рисование");
+        AddRow("Толщина линии", UiKit.Number(_draft.StrokeWidth, v => _draft.StrokeWidth = v, 0.5, 78, 0.1, 200));
+        AddRow("Размер кисти", UiKit.Number(_draft.BrushSize, v => _draft.BrushSize = v, 1, 78, 1, 400));
+        AddCheck("Сглаживать линии карандаша и кисти", _draft.SmoothStrokes, v => _draft.SmoothStrokes = v);
+
+        /* ---------------------------- планшет -------------------------- */
+        AddSection("Графический планшет");
+        AddCheck("Обрабатывать перо отдельно от мыши", _draft.TabletEnabled, v => _draft.TabletEnabled = v);
+        AddCheck("Учитывать силу нажатия пера (толщина линии)", _draft.TabletPressure, v => _draft.TabletPressure = v);
+        AddCheck("Игнорировать касания пальцем (защита от ладони)", _draft.TabletIgnoreTouch, v => _draft.TabletIgnoreTouch = v);
+        Body.Children.Add(new TextBlock
+        {
+            Text = TabletInfo(),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)Application.Current.Resources["TxtDim"],
+            Margin = new Thickness(0, 6, 0, 2),
+        });
+
+        /* ------------------------- автосохранение ---------------------- */
+        AddSection("Автосохранение");
+        AddRow("Интервал в минутах (0 — выключено)",
+            UiKit.Number(_draft.AutosaveMinutes, v => _draft.AutosaveMinutes = (int)Math.Round(v), 1, 60, 0, 60));
+
+        AddButtons(
+            Primary("Готово", () =>
+            {
+                Result = _draft.Normalized();
+                DialogResult = true;
+            }),
+            Secondary("Отмена"),
+            Secondary("По умолчанию", () =>
+            {
+                _draft = new AppSettings { Language = _draft.Language };
+                Build();
+            }));
+    }
+
+    private void AddSection(string title)
+    {
+        Body.Children.Add(new TextBlock
+        {
+            Text = L10n.T(title).ToUpperInvariant(),
+            FontSize = 10.5,
+            FontWeight = FontWeights.Bold,
+            Foreground = (Brush)Application.Current.Resources["Accent2"],
+            Margin = new Thickness(0, 14, 0, 2),
+        });
+        Body.Children.Add(new Border
+        {
+            Height = 1,
+            Background = (Brush)Application.Current.Resources["Line"],
+            Margin = new Thickness(0, 0, 0, 4),
+        });
+    }
+
+    private void AddCheck(string label, bool value, Action<bool> onChange)
+    {
+        var check = UiKit.Check(label, value, onChange);
+        check.Margin = new Thickness(0, 5, 0, 0);
+        Body.Children.Add(check);
+    }
+
+    private void AddRow(string label, params UIElement[] fields)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+        row.Children.Add(new TextBlock
+        {
+            Text = L10n.T(label),
+            Width = 250,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = (Brush)Application.Current.Resources["Txt"],
+        });
+        foreach (var field in fields)
+        {
+            if (field is FrameworkElement fe) fe.Margin = new Thickness(0, 0, 6, 0);
+            row.Children.Add(field);
+        }
+        Body.Children.Add(row);
+    }
+
+    /// <summary>Какие перьевые устройства видит система (подсказка в разделе «Планшет»).</summary>
+    private static string TabletInfo()
+    {
+        try
+        {
+            var devices = Tablet.TabletDevices;
+            if (devices == null || devices.Count == 0)
+                return L10n.T("Перьевые устройства не обнаружены: работают мышь и тачпад. Подключите планшет — и перо начнёт работать сразу.");
+
+            var names = new List<string>();
+            foreach (TabletDevice device in devices)
+            {
+                string kind = device.Type == TabletDeviceType.Touch ? L10n.T("сенсорный ввод") : L10n.T("перо");
+                names.Add(device.Name + " (" + kind + ")");
+            }
+            return L10n.T("Найдено устройств: ") + devices.Count + " — " + string.Join("; ", names) + ".";
+        }
+        catch
+        {
+            return L10n.T("Сведения об устройствах ввода недоступны.");
+        }
     }
 }

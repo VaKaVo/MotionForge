@@ -20,6 +20,11 @@ public static class Json
 
     public static Project Load(string text) => JsonSerializer.Deserialize<Project>(text, Options);
 
+    /// <summary>Сериализация любого объекта теми же правилами (настройки, шаблоны и т.п.).</summary>
+    public static string SaveObject<T>(T value) => JsonSerializer.Serialize(value, Options);
+
+    public static T LoadObject<T>(string text) where T : class => JsonSerializer.Deserialize<T>(text, Options);
+
     /// <summary>Глубокое копирование (используется для снимков отмены и копирования кадров).</summary>
     public static T Clone<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, Options), Options);
 }

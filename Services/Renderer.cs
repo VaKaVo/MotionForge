@@ -205,18 +205,85 @@ public static class Renderer
         var points = ev.Points ?? shape.Points;
         if (points == null || points.Count < 2) return;
 
-        var geometry = BuildGeometry(points, shape.Closed, shape.Smooth);
-
         if (options.OutlineAll || (ev.Layer != null && ev.Layer.Outline))
         {
             var outlinePen = GetPen(ev.Layer != null ? ev.Layer.Color : "#4A90D9", 1.5, 1);
-            if (outlinePen != null) dc.DrawGeometry(null, outlinePen, geometry);
+            var outlineGeometry = BuildGeometry(points, shape.Closed, shape.Smooth);
+            if (outlinePen != null) dc.DrawGeometry(null, outlinePen, outlineGeometry);
             return;
         }
 
+        // Линия с профилем толщины (рисование пером с нажатием) — рисуем «лентой».
+        if (shape.Widths != null && shape.Widths.Count == points.Count && !shape.Closed && shape.StrokeWidth > 0)
+        {
+            double scale = Math.Max(0.02, ev.StrokeWidth / shape.StrokeWidth);
+            var ribbonBrush = GetBrush(ev.Stroke ?? shape.Stroke, 1);
+            if (ribbonBrush != null)
+            {
+                DrawRibbon(dc, points, shape.Widths, ribbonBrush, scale);
+                return;
+            }
+        }
+
+        var geometry = BuildGeometry(points, shape.Closed, shape.Smooth);
         Brush fill = shape.Filled && shape.Closed ? GetBrush(ev.Fill ?? shape.Fill, 1) : null;
         Pen pen = shape.Stroked ? GetPen(ev.Stroke ?? shape.Stroke, Math.Max(0.1, ev.StrokeWidth), 1) : null;
         dc.DrawGeometry(fill, pen, geometry);
+    }
+
+    /// <summary>
+    /// Рисует ломаную переменной толщины: смещаем точки по нормали на половину ширины,
+    /// соединяем в замкнутый контур и заливаем. Торцы скругляются.
+    /// </summary>
+    public static void DrawRibbon(DrawingContext dc, IList<Vec> points, IList<double> widths, Brush brush, double scale)
+    {
+        if (points == null || widths == null || brush == null) return;
+        int n = Math.Min(points.Count, widths.Count);
+        if (n < 2) return;
+
+        var left = new List<Vec>(n);
+        var right = new List<Vec>(n);
+        for (int i = 0; i < n; i++)
+        {
+            Vec prev = points[Math.Max(0, i - 1)];
+            Vec next = points[Math.Min(n - 1, i + 1)];
+            double dx = next.X - prev.X;
+            double dy = next.Y - prev.Y;
+            double len = Math.Sqrt(dx * dx + dy * dy);
+            if (len < 1e-9) { dx = 1; dy = 0; len = 1; }
+            double nx = -dy / len;
+            double ny = dx / len;
+            double half = Math.Max(0.15, widths[i] * scale) / 2;
+            left.Add(new Vec(points[i].X + nx * half, points[i].Y + ny * half));
+            right.Add(new Vec(points[i].X - nx * half, points[i].Y - ny * half));
+        }
+
+        var geometry = new StreamGeometry();
+        using (StreamGeometryContext ctx = geometry.Open())
+        {
+            ctx.BeginFigure(new Point(left[0].X, left[0].Y), true, true);
+            for (int i = 1; i < n; i++) ctx.LineTo(new Point(left[i].X, left[i].Y), true, false);
+            AddCap(ctx, points[n - 1], left[n - 1], right[n - 1], Math.Max(0.15, widths[n - 1] * scale) / 2);
+            for (int i = n - 1; i >= 0; i--) ctx.LineTo(new Point(right[i].X, right[i].Y), true, false);
+            AddCap(ctx, points[0], right[0], left[0], Math.Max(0.15, widths[0] * scale) / 2);
+        }
+        geometry.Freeze();
+        dc.DrawGeometry(brush, null, geometry);
+    }
+
+    private static void AddCap(StreamGeometryContext ctx, Vec center, Vec from, Vec to, double radius)
+    {
+        double a0 = Math.Atan2(from.Y - center.Y, from.X - center.X);
+        double a1 = Math.Atan2(to.Y - center.Y, to.X - center.X);
+        double delta = a1 - a0;
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta < -Math.PI) delta += 2 * Math.PI;
+        const int steps = 6;
+        for (int i = 1; i <= steps; i++)
+        {
+            double a = a0 + delta * i / steps;
+            ctx.LineTo(new Point(center.X + Math.Cos(a) * radius, center.Y + Math.Sin(a) * radius), true, false);
+        }
     }
 
     private static void DrawText(DrawingContext dc, TextElement text, EvalElement ev, RenderOptions options)

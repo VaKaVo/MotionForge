@@ -7,11 +7,20 @@ namespace MotionForge.Services;
 /// <summary>Демонстрационный проект: классические твины, символ с анимацией и текст.</summary>
 public static class SampleProject
 {
-    public static Project Create()
+    private static bool LocalizeNames = true;
+
+    /// <summary>Имя объекта демо-проекта: локализуется вместе с интерфейсом
+    /// (автотесты вызывают Create(false) и сверяются с исходными именами).</summary>
+    private static string N(string source) => LocalizeNames ? L10n.T(source) : source;
+
+    /// <summary>Демонстрационный проект: классические твины, символ с анимацией и текст.</summary>
+    public static Project Create(bool localizeNames = true)
     {
-        var project = new Project { Name = "Демо: отскок мяча" };
+        LocalizeNames = localizeNames;
+
+        var project = new Project { Name = N("Демо: отскок мяча") };
         project.Stage = new StageInfo { Width = 960, Height = 600, Background = "#101828", Fps = 24 };
-        project.Timeline.Name = "Сцена 1";
+        project.Timeline.Name = N("Сцена 1");
 
         var symbolId = AddStarSymbol(project);
 
@@ -27,11 +36,11 @@ public static class SampleProject
 
     private static Layer TextLayer()
     {
-        var layer = new Layer { Name = "Заголовок", Color = "#4A90D9" };
+        var layer = new Layer { Name = N("Заголовок"), Color = "#4A90D9" };
         var keyframe = new Keyframe { Index = 0, Duration = 48 };
         keyframe.Elements.Add(new TextElement
         {
-            Name = "Заголовок",
+            Name = N("Заголовок"),
             Text = "MotionForge",
             X = 480,
             Y = 70,
@@ -42,8 +51,8 @@ public static class SampleProject
         });
         keyframe.Elements.Add(new TextElement
         {
-            Name = "Подзаголовок",
-            Text = "классический твин · символы · библиотека",
+            Name = N("Подзаголовок"),
+            Text = N("классический твин · символы · библиотека"),
             X = 480,
             Y = 160,
             FontSize = 24,
@@ -57,13 +66,13 @@ public static class SampleProject
 
     private static Layer StarLayer(string symbolId)
     {
-        var layer = new Layer { Name = "Звезда (символ)", Color = "#FFB545" };
+        var layer = new Layer { Name = N("Звезда (символ)"), Color = "#FFB545" };
         var keyframe = new Keyframe { Index = 0, Duration = 48 };
         keyframe.Elements.Add(new InstanceElement
         {
-            Name = "Звезда",
+            Name = N("Звезда"),
             SymbolId = symbolId,
-            SymbolName = "Звезда",
+            SymbolName = N("Звезда"),
             X = 855,
             Y = 320,
             ScaleX = 0.85,
@@ -75,7 +84,7 @@ public static class SampleProject
 
     private static Layer BallLayer()
     {
-        var layer = new Layer { Name = "Мяч", Color = "#35D39A" };
+        var layer = new Layer { Name = N("Мяч"), Color = "#35D39A" };
         var ball = MakeBall();
         ball.X = 150;
         ball.Y = 430;
@@ -112,11 +121,11 @@ public static class SampleProject
 
     private static Layer BackLayer()
     {
-        var layer = new Layer { Name = "Фон", Color = "#B8A33C" };
+        var layer = new Layer { Name = N("Фон"), Color = "#B8A33C" };
         var keyframe = new Keyframe { Index = 0, Duration = 48 };
         keyframe.Elements.Add(new ShapeElement
         {
-            Name = "Земля",
+            Name = N("Земля"),
             Points = new List<Vec>
             {
                 new Vec(-480, 0), new Vec(480, 0), new Vec(480, 130), new Vec(-480, 130),
@@ -131,7 +140,7 @@ public static class SampleProject
         });
         keyframe.Elements.Add(new ShapeElement
         {
-            Name = "Пятно тени",
+            Name = N("Пятно тени"),
             Points = Geo.EllipsePoints(120, 18, 40),
             Closed = true,
             Fill = "#0B0F1C",
@@ -147,7 +156,7 @@ public static class SampleProject
     {
         return new ShapeElement
         {
-            Name = "Мяч",
+            Name = N("Мяч"),
             Points = Geo.EllipsePoints(48, 48, 48),
             Closed = true,
             Fill = "#FFB545",
@@ -163,7 +172,7 @@ public static class SampleProject
     {
         var star = new ShapeElement
         {
-            Name = "Звезда",
+            Name = N("Звезда"),
             Points = StarPoints(46, 20, 5),
             Closed = true,
             Fill = "#FFD166",
@@ -178,15 +187,15 @@ public static class SampleProject
 
         var keyframeA = new Keyframe { Index = 0, Duration = 24, Elements = { star } };
         var keyframeB = new Keyframe { Index = 24, Duration = 1, Elements = { rotated }, Tween = new Tween { Type = "classic" } };
-        var layer = new Layer { Name = "Слой 1", Color = "#FFB545", Frames = { keyframeA, keyframeB } };
+        var layer = new Layer { Name = N("Слой 1"), Color = "#FFB545", Frames = { keyframeA, keyframeB } };
 
         var symbol = new Symbol
         {
-            Name = "Звезда",
+            Name = N("Звезда"),
             Kind = SymbolKind.MovieClip,
             Bounds = new RectD(-46, -46, 92, 92),
         };
-        symbol.Timeline = new Scene { Name = "Звезда", Layers = { layer } };
+        symbol.Timeline = new Scene { Name = N("Звезда"), Layers = { layer } };
         project.Library[symbol.Id] = symbol;
         return symbol.Id;
     }

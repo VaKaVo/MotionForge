@@ -57,7 +57,7 @@ public static class SelfTest
         Project demo = null;
         try
         {
-            demo = SampleProject.Create();
+            demo = SampleProject.Create(false);
             Check("Демо-проект: слои", demo.Timeline.Layers.Count == 4, string.Join(", ", demo.Timeline.Layers.Select(l => l.Name)));
             int length = Anim.SceneLength(demo.Timeline);
             Check("Демо-проект: длительность 48 кадров", length == 48, length.ToString());
@@ -114,7 +114,7 @@ public static class SelfTest
         /* ---------- Store: кадры, отмена, символы ---------- */
         try
         {
-            var store = new Store(SampleProject.Create());
+            var store = new Store(SampleProject.Create(false));
             var layer = store.ActiveLayer;
             var original = Anim.Covering(layer, 0);
             int before = layer.Frames.Count;
@@ -316,6 +316,7 @@ public static class SelfTest
             Check("Удаление по клавише Delete", Runs(Plain(System.Windows.Input.Key.Delete), "edit.delete"));
             Check("Инструмент «прямоугольник» на R", Runs(Plain(System.Windows.Input.Key.R), "tool.rect"));
             Check("Инструмент «масштаб» на Z", Runs(Plain(System.Windows.Input.Key.Z), "tool.zoom"));
+            Check("Ctrl+, открывает «Настройки»", Runs(Ctrl(System.Windows.Input.Key.OemComma), "edit.settings"));
 
             int letters = 0;
             foreach (string spec in new[] { "A", "B", "C", "D", "V", "Y", "Z" })
@@ -326,6 +327,139 @@ public static class SelfTest
             Check("Все буквенные сочетания в диапазоне 44…69", letters == 7, letters + "/7");
         }
         catch (Exception ex) { Check("Горячие клавиши (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
+
+        /* ---------- локализация ---------- */
+        try
+        {
+            string ruPath = Path.Combine(L10n.LocalizationFolder, "en.json");
+            Check("Файл английского перевода на месте", File.Exists(ruPath), L10n.LocalizationFolder);
+
+            var enTable = File.Exists(ruPath)
+                ? Json.LoadObject<Dictionary<string, string>>(File.ReadAllText(ruPath, Encoding.UTF8))
+                : null;
+            Check("Английский перевод читается", enTable != null && enTable.Count > 300,
+                enTable == null ? "таблица не прочитана" : enTable.Count + " строк");
+
+            string previous = L10n.Current;
+            L10n.SetLanguage("ru");
+            Check("Русский возвращает исходную строку", L10n.T("Файл") == "Файл");
+            L10n.SetLanguage("de");
+            Check("Резервная английская таблица загружается всегда", L10n.IsLoaded("en"));
+            Check("Непереведённая строка берётся из английского", L10n.T("Фон сцены") == "Stage background",
+                L10n.T("Фон сцены"));
+            L10n.SetLanguage("en");
+            Check("Английский переводит строку", L10n.T("Файл") == "File", L10n.T("Файл"));
+            Check("Неизвестная строка не теряется", L10n.T("Нет такой строки — 42") == "Нет такой строки — 42");
+            L10n.SetLanguage("xx");
+            Check("Незнакомый язык падает на английский", L10n.T("Файл") == "File", L10n.T("Файл"));
+            L10n.SetLanguage(previous);
+
+            var languages = L10n.Languages();
+            Check("Список языков начинается с русского", languages.Count > 0 && languages[0].Code == "ru");
+            Check("Все файлы переводов имеют код и название",
+                languages.TrueForAll(l => !string.IsNullOrWhiteSpace(l.Code) && !string.IsNullOrWhiteSpace(l.Name)),
+                languages.Count + " языков");
+
+            // Каждый файл перевода должен читаться тем же способом, что и в приложении.
+            var broken = new List<string>();
+            var thin = new List<string>();
+            int totalKeys = 0;
+            foreach (string file in Directory.GetFiles(L10n.LocalizationFolder, "*.json"))
+            {
+                string code = Path.GetFileNameWithoutExtension(file);
+                try
+                {
+                    var table = Json.LoadObject<Dictionary<string, string>>(File.ReadAllText(file, Encoding.UTF8));
+                    if (table == null) { broken.Add(code + " (пусто)"); continue; }
+                    totalKeys += table.Count;
+                    foreach (var pair in table)
+                        if (string.IsNullOrWhiteSpace(pair.Value)) broken.Add(code + ": " + pair.Key);
+                    if (table.Count < 40) thin.Add(code + " (" + table.Count + ")");
+                }
+                catch (Exception ex) { broken.Add(code + " (" + ex.GetType().Name + ")"); }
+            }
+            Check("Все файлы переводов читаются, пустых строк нет", broken.Count == 0,
+                broken.Count == 0 ? null : string.Join(", ", broken));
+            Check("В каждом языке не меньше 40 строк", thin.Count == 0,
+                thin.Count == 0 ? languages.Count + " языков, " + totalKeys + " строк" : string.Join(", ", thin));
+
+            var list = L10n.Languages();
+            if (list.Count > 1)
+            {
+                string sample = list[1].Code;
+                L10n.SetLanguage(sample);
+                string probe = null;
+                foreach (string key in new[] { "Помощь", "Вид", "Настройки…", "Файл" })
+                    if (L10n.T(key) != key) { probe = key + " → " + L10n.T(key); break; }
+                Check("Второй язык в списке переводит меню", probe != null, sample + ": " + (probe ?? "ничего не переведено"));
+                L10n.SetLanguage("ru");
+            }
+        }
+        catch (Exception ex) { Check("Локализация (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
+
+        /* ---------- настройки ---------- */
+        try
+        {
+            var defaults = new AppSettings();
+            Check("Планшет включён по умолчанию", defaults.TabletEnabled && defaults.TabletPressure);
+            Check("Сетка по умолчанию выключена", !defaults.GridOn && !defaults.SnapToGrid);
+
+            var copy = defaults.Clone();
+            copy.GridStep = 77;
+            copy.Language = "de";
+            Check("Копия настроек не меняет оригинал", defaults.GridStep == 40 && defaults.Language == "ru");
+
+            var wild = new AppSettings { GridStep = 100000, OnionBefore = -9, OnionAfter = 99, BrushSize = 0, AutosaveMinutes = 999 };
+            wild.Normalized();
+            Check("Недопустимые значения приводятся к норме",
+                wild.GridStep == 400 && wild.OnionBefore == 0 && wild.OnionAfter == 5 && wild.BrushSize == 1 && wild.AutosaveMinutes == 60,
+                wild.GridStep + " / " + wild.OnionBefore + " / " + wild.OnionAfter + " / " + wild.BrushSize + " / " + wild.AutosaveMinutes);
+            Check("Пустой язык заменяется русским", new AppSettings { Language = "  " }.Normalized().Language == "ru");
+
+            var round = Json.LoadObject<AppSettings>(Json.SaveObject(new AppSettings
+            {
+                Language = "ja",
+                GridOn = true,
+                GridStep = 25,
+                SnapToGrid = true,
+                StrokeWidth = 3.5,
+                BrushSize = 42,
+                TabletIgnoreTouch = false,
+                AutosaveMinutes = 7,
+            }));
+            Check("Настройки переживают сохранение и чтение",
+                round != null && round.Language == "ja" && round.GridOn && round.SnapToGrid &&
+                Math.Abs(round.GridStep - 25) < 1e-9 && Math.Abs(round.StrokeWidth - 3.5) < 1e-9 &&
+                round.BrushSize == 42 && !round.TabletIgnoreTouch && round.AutosaveMinutes == 7);
+        }
+        catch (Exception ex) { Check("Настройки (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
+
+        /* ---------- толщина линии (перо) ---------- */
+        try
+        {
+            var line = new List<Vec>();
+            for (int i = 0; i <= 99; i++) line.Add(new Vec(i * 4, 0));
+            var widths = new List<double>();
+            for (int i = 0; i <= 99; i++) widths.Add(1 + i * 0.5);   // 1 → 50.5
+
+            var thin = Geo.WidthsAlong(line, widths, new List<Vec> { new Vec(0, 0), new Vec(200, 0), new Vec(396, 0) });
+            Check("Профиль толщины переносится на упрощённую линию", thin.Count == 3,
+                thin.Count + " точек");
+            Check("Толщина растёт по ходу линии",
+                thin.Count == 3 && thin[0] < thin[1] && thin[1] < thin[2],
+                thin.Count == 3 ? string.Join(" / ", thin.ConvertAll(v => Math.Round(v, 1))) : "нет данных");
+            Check("Начало и конец профиля совпадают с исходными",
+                thin.Count == 3 && Math.Abs(thin[0] - 1) < 1e-6 && Math.Abs(thin[2] - 50.5) < 1e-6);
+
+            Check("Несогласованный профиль игнорируется",
+                Geo.WidthsAlong(line, new List<double> { 5 }, new List<Vec> { new Vec(0, 0) }).Count == 0);
+
+            var element = new ShapeElement { Widths = new List<double> { 2, 6, 10 } };
+            var clone = (ShapeElement)element.Clone();
+            Check("Профиль толщины копируется вместе с объектом",
+                clone.Widths != null && clone.Widths.Count == 3 && Math.Abs(clone.Widths[2] - 10) < 1e-9);
+        }
+        catch (Exception ex) { Check("Толщина линии (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
 
         /* ---------- отчёт ---------- */
         var report = new StringBuilder();

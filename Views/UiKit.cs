@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using MotionForge.Model;
+using MotionForge.Services;
 
 namespace MotionForge.Views;
 
@@ -14,6 +15,9 @@ namespace MotionForge.Views;
 public static class UiKit
 {
     public static Brush Res(string key) => (Brush)Application.Current.Resources[key];
+
+    /// <summary>Короткий псевдоним локализации для панелей и диалогов.</summary>
+    public static string T(string source) => L10n.T(source);
 
     /// <summary>Идёт редактирование текста внутри указанной панели — пересобирать её содержимое нельзя.</summary>
     public static bool IsEditingText(DependencyObject scope)
@@ -44,6 +48,7 @@ public static class UiKit
     public static Border PanelHeader(string title, ContextMenu menu = null, Action onClose = null,
         params UIElement[] extraButtons)
     {
+        title = L10n.T(title);
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -67,13 +72,13 @@ public static class UiKit
         {
             var burger = new TextBlock
             {
-                Text = "\uE700",
+                Text = UiKit.T("\uE700"),
                 FontFamily = new FontFamily("Segoe MDL2 Assets"),
                 FontSize = 12,
                 Foreground = Res("HeaderTxt"),
                 Margin = new Thickness(4, 0, 4, 0),
                 Cursor = Cursors.Hand,
-                ToolTip = "Меню панели",
+                ToolTip = UiKit.T("Меню панели"),
             };
             burger.MouseLeftButtonDown += (s, e) =>
             {
@@ -88,13 +93,13 @@ public static class UiKit
         {
             var close = new TextBlock
             {
-                Text = "\uE711",
+                Text = UiKit.T("\uE711"),
                 FontFamily = new FontFamily("Segoe MDL2 Assets"),
                 FontSize = 10,
                 Foreground = Res("HeaderTxt"),
                 Margin = new Thickness(2, 0, 2, 0),
                 Cursor = Cursors.Hand,
-                ToolTip = "Закрыть панель",
+                ToolTip = UiKit.T("Закрыть панель"),
             };
             close.MouseLeftButtonDown += (s, e) => { onClose(); e.Handled = true; };
             right.Children.Add(close);
@@ -112,6 +117,7 @@ public static class UiKit
     /// <summary>Заголовок раздела внутри панели — как в «Свойствах» у Animate: треугольник и жирный текст.</summary>
     public static Border SectionHeader(string text, bool expandable = false)
     {
+        text = L10n.T(text);
         var arrow = new Path
         {
             Data = Geometry.Parse("M0 0 L8 0 L4 4 Z"),
@@ -143,6 +149,7 @@ public static class UiKit
 
     public static TextBlock Caption(string text)
     {
+        text = L10n.T(text);
         return new TextBlock
         {
             Text = text,
@@ -155,6 +162,7 @@ public static class UiKit
 
     public static TextBlock Hint(string text, double width = double.NaN)
     {
+        text = L10n.T(text);
         var block = new TextBlock
         {
             Text = text,
@@ -170,6 +178,7 @@ public static class UiKit
 
     public static TextBlock Label(string text, double width = 78)
     {
+        text = L10n.T(text);
         return new TextBlock
         {
             Text = text,
@@ -184,6 +193,7 @@ public static class UiKit
 
     public static Border FieldLabel(string text)
     {
+        text = L10n.T(text);
         return new Border
         {
             Background = Res("Panel2"),
@@ -216,6 +226,7 @@ public static class UiKit
     /// <summary>Полоса «подпись — поле» в стиле панели «Свойства».</summary>
     public static Grid PropRow(string label, double labelWidth, params UIElement[] fields)
     {
+        label = L10n.T(label);
         var grid = new Grid { Margin = new Thickness(0, 0, 0, 4) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(labelWidth) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -342,6 +353,7 @@ public static class UiKit
 
     public static CheckBox Check(string label, bool value, Action<bool> onChange, double marginRight = 12)
     {
+        label = L10n.T(label);
         var check = new CheckBox
         {
             Content = label,
@@ -361,7 +373,7 @@ public static class UiKit
         string selectedValue = current;
         foreach (var (value, label) in items)
         {
-            var item = new ComboBoxItem { Content = label, Tag = value };
+            var item = new ComboBoxItem { Content = L10n.T(label), Tag = value };
             combo.Items.Add(item);
             if (value == current) combo.SelectedItem = item;
         }
@@ -379,6 +391,8 @@ public static class UiKit
 
     public static Button SmallButton(string text, string tooltip, Action onClick)
     {
+        text = L10n.T(text);
+        tooltip = L10n.T(tooltip);
         var button = new Button
         {
             Content = text,
@@ -393,6 +407,7 @@ public static class UiKit
 
     public static Button IconButton(string iconId, string tooltip, Action onClick, double size = 26)
     {
+        tooltip = L10n.T(tooltip);
         var button = new Button
         {
             Style = (Style)Application.Current.Resources["IconBtn"],
@@ -412,6 +427,7 @@ public static class UiKit
     /// <summary>Кнопка-иконка из шрифта Segoe MDL2 (плоская, без рамки).</summary>
     public static Button GlyphButton(string glyph, string tooltip, Action onClick, double size = 22)
     {
+        tooltip = L10n.T(tooltip);
         var button = new Button
         {
             Style = (Style)Application.Current.Resources["IconBtn"],
@@ -436,6 +452,7 @@ public static class UiKit
 
     public static MenuItem Menu(string header, Action action)
     {
+        header = L10n.T(header);
         var item = new MenuItem { Header = header };
         item.Click += (s, e) => action?.Invoke();
         return item;
@@ -474,7 +491,7 @@ public class ColorButton : Button
         Style = (Style)Application.Current.Resources["Btn"];
         Padding = new Thickness(2);
         Content = _swatch;
-        ToolTip = "Цвет: нажмите, чтобы выбрать";
+        ToolTip = UiKit.T("Цвет: нажмите, чтобы выбрать");
         Click += (s, e) => ColorPicker.Open(this, _color, hex =>
         {
             Color = hex;

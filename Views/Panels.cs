@@ -136,7 +136,7 @@ public class ToolsPanel : StackPanel
         var options = new StackPanel { Margin = new Thickness(5, 6, 5, 8) };
         options.Children.Add(new TextBlock
         {
-            Text = "ВИД",
+            Text = UiKit.T("ВИД"),
             FontSize = 9.5,
             FontWeight = FontWeights.Bold,
             Foreground = UiKit.Res("TxtDim"),
@@ -267,7 +267,7 @@ public class PropertiesPanel : StackPanel
         var panel = new StackPanel();
         panel.Children.Add(new TextBlock
         {
-            Text = tool.Title.ToUpperInvariant(),
+            Text = UiKit.T(tool.Title).ToUpperInvariant(),
             FontSize = 10,
             FontWeight = FontWeights.Bold,
             Foreground = UiKit.Res("Accent2"),
@@ -384,7 +384,7 @@ public class PropertiesPanel : StackPanel
 
         panel.Children.Add(UiKit.PropRow("Размер", 88,
             UiKit.Number(stage.Width, v => { stage.Width = v; StageChanged("Ширина сцены"); }, 10, 58, 16, 8000),
-            new TextBlock { Text = "×", Margin = new Thickness(4, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = UiKit.Res("TxtDim") },
+            new TextBlock { Text = UiKit.T("×"), Margin = new Thickness(4, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = UiKit.Res("TxtDim") },
             UiKit.Number(stage.Height, v => { stage.Height = v; StageChanged("Высота сцены"); }, 10, 58, 16, 8000)));
 
         var bg = new ColorButton(stage.Background);
@@ -402,7 +402,7 @@ public class PropertiesPanel : StackPanel
 
         panel.Children.Add(UiKit.PropRow("Длительность", 88, new TextBlock
         {
-            Text = Store.SceneLength + " кадр.  ·  " + Num.F(Store.SceneLength / (double)Math.Max(1, stage.Fps), 2) + " с",
+            Text = Store.SceneLength + UiKit.T(" кадр.  ·  ") + Num.F(Store.SceneLength / (double)Math.Max(1, stage.Fps), 2) + UiKit.T(" с"),
             Foreground = UiKit.Res("TxtDim"),
             VerticalAlignment = VerticalAlignment.Center,
         }));
@@ -443,7 +443,7 @@ public class PropertiesPanel : StackPanel
                 BorderBrush = UiKit.Res("Line2"),
                 BorderThickness = new Thickness(1),
                 Cursor = Cursors.Hand,
-                ToolTip = "Цвет слоя",
+                ToolTip = UiKit.T("Цвет слоя"),
                 Margin = new Thickness(4, 0, 0, 0),
             }.WithClick(element =>
             {
@@ -467,7 +467,7 @@ public class PropertiesPanel : StackPanel
         {
             panel.Children.Add(UiKit.PropRow("Диапазон", 74, new TextBlock
             {
-                Text = (keyframe.Index + 1) + " – " + (keyframe.EndIndex + 1) + "   ·   объектов: " + keyframe.Elements.Count,
+                Text = (keyframe.Index + 1) + " – " + (keyframe.EndIndex + 1) + UiKit.T("   ·   объектов: ") + keyframe.Elements.Count,
                 Foreground = UiKit.Res("TxtDim"),
                 VerticalAlignment = VerticalAlignment.Center,
             }));
@@ -569,7 +569,7 @@ public class PropertiesPanel : StackPanel
             Width = 130,
             VerticalAlignment = VerticalAlignment.Center,
             IsMoveToPointEnabled = true,
-            ToolTip = "Замедление перехода",
+            ToolTip = UiKit.T("Замедление перехода"),
         };
         slider.ValueChanged += (s, e) =>
         {
@@ -595,7 +595,7 @@ public class PropertiesPanel : StackPanel
             case ShapeElement shape:
                 panel.Children.Add(new TextBlock
                 {
-                    Text = "ФИГУРА",
+                    Text = UiKit.T("ФИГУРА"),
                     FontSize = 10,
                     FontWeight = FontWeights.Bold,
                     Foreground = UiKit.Res("TxtDim"),
@@ -613,7 +613,7 @@ public class PropertiesPanel : StackPanel
                     UiKit.Check("Сглаживание", shape.Smooth, v => { shape.Smooth = v; Commit("Сглаживание"); })));
                 panel.Children.Add(new TextBlock
                 {
-                    Text = "Точек: " + shape.Points.Count,
+                    Text = UiKit.T("Точек: ") + shape.Points.Count,
                     Foreground = UiKit.Res("TxtDim"),
                     Margin = new Thickness(0, 2, 0, 0),
                     FontSize = 10.5,
@@ -623,7 +623,7 @@ public class PropertiesPanel : StackPanel
             case TextElement text:
                 panel.Children.Add(new TextBlock
                 {
-                    Text = "ТЕКСТ",
+                    Text = UiKit.T("ТЕКСТ"),
                     FontSize = 10,
                     FontWeight = FontWeights.Bold,
                     Foreground = UiKit.Res("TxtDim"),
@@ -665,7 +665,7 @@ public class PropertiesPanel : StackPanel
             case InstanceElement instance:
                 panel.Children.Add(new TextBlock
                 {
-                    Text = "СИМВОЛ",
+                    Text = UiKit.T("СИМВОЛ"),
                     FontSize = 10,
                     FontWeight = FontWeights.Bold,
                     Foreground = UiKit.Res("TxtDim"),
@@ -691,7 +691,7 @@ public class PropertiesPanel : StackPanel
             case GroupElement group:
                 panel.Children.Add(new TextBlock
                 {
-                    Text = "ГРУППА",
+                    Text = UiKit.T("ГРУППА"),
                     FontSize = 10,
                     FontWeight = FontWeights.Bold,
                     Foreground = UiKit.Res("TxtDim"),
@@ -708,7 +708,7 @@ public class PropertiesPanel : StackPanel
             case ImageElement image:
                 panel.Children.Add(new TextBlock
                 {
-                    Text = "ИЗОБРАЖЕНИЕ",
+                    Text = UiKit.T("ИЗОБРАЖЕНИЕ"),
                     FontSize = 10,
                     FontWeight = FontWeights.Bold,
                     Foreground = UiKit.Res("TxtDim"),
@@ -932,7 +932,7 @@ public class LibraryPanel : DockPanel
         _list = new StackPanel();
         _emptyHint = new TextBlock
         {
-            Text = "Библиотека пуста.\nВыделите рисунок на сцене и нажмите «Преобразовать в символ» (F8).",
+            Text = UiKit.T("Библиотека пуста.\nВыделите рисунок на сцене и нажмите «Преобразовать в символ» (F8)."),
             TextWrapping = TextWrapping.Wrap,
             Foreground = UiKit.Res("TxtDim"),
             Margin = new Thickness(8),
@@ -952,7 +952,7 @@ public class LibraryPanel : DockPanel
     {
         var block = new TextBlock
         {
-            Text = text,
+            Text = UiKit.T(text),
             FontSize = 10,
             Foreground = UiKit.Res("TxtDim"),
         };
@@ -996,7 +996,7 @@ public class LibraryPanel : DockPanel
         else
         {
             _previewImage.Source = null;
-            _previewName.Text = "нет выбранного символа";
+            _previewName.Text = UiKit.T("нет выбранного символа");
         }
     }
 
@@ -1078,9 +1078,9 @@ public class LibraryPanel : DockPanel
     {
         switch (kind)
         {
-            case SymbolKind.MovieClip: return "Клип";
-            case SymbolKind.Graphic: return "Графика";
-            default: return "Кнопка";
+            case SymbolKind.MovieClip: return L10n.T("Клип");
+            case SymbolKind.Graphic: return L10n.T("Графика");
+            default: return L10n.T("Кнопка");
         }
     }
 
@@ -1231,7 +1231,7 @@ public class LayersPanel : StackPanel
 
         var title = new TextBlock
         {
-            Text = "СЛОИ",
+            Text = UiKit.T("СЛОИ"),
             FontSize = 10,
             FontWeight = FontWeights.Bold,
             Foreground = UiKit.Res("TxtDim"),
@@ -1316,7 +1316,7 @@ public class LayersPanel : StackPanel
             BorderThickness = new Thickness(1),
             VerticalAlignment = VerticalAlignment.Center,
             Cursor = Cursors.Hand,
-            ToolTip = "Цвет слоя",
+            ToolTip = UiKit.T("Цвет слоя"),
         };
         chip.MouseLeftButtonUp += (s, e) =>
         {
@@ -1542,7 +1542,7 @@ public class TimelineToolbar : StackPanel
             Padding = new Thickness(0),
             Margin = new Thickness(0, 0, 2, 0),
             Content = _playButton,
-            ToolTip = "Воспроизведение / пауза (Пробел)",
+            ToolTip = UiKit.T("Воспроизведение / пауза (Пробел)"),
         };
         button.Click += (s, e) => PlayToggled?.Invoke();
         return button;
@@ -1578,7 +1578,7 @@ public class TimelineToolbar : StackPanel
         if (Store == null) return;
         _playButton.Text = Store.Playing ? "\uE769" : "\uE768";
         _playButton.Foreground = Store.Playing ? UiKit.Res("Ok") : UiKit.Res("Txt");
-        _frameInfo.Text = "кадр " + (Store.Playhead + 1) + "/" + Store.SceneLength +
+        _frameInfo.Text = UiKit.T("кадр ") + (Store.Playhead + 1) + "/" + Store.SceneLength +
                           "   ·   " + Store.Project.Stage.Fps + " к/с" +
                           (Store.ActiveSymbol != null ? "   ·   " + Store.ActiveSymbol.Name : "");
     }

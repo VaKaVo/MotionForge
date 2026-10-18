@@ -19,9 +19,21 @@ public class ToolContext
     public ModifierKeys Mods;
     public Action Invalidate;
 
+    /// <summary>Ввод от пера планшета (а не от мыши).</summary>
+    public bool FromStylus;
+
+    /// <summary>Сила нажатия пера: 0.05…1 (для мыши всегда 1).</summary>
+    public double Pressure = 1;
+
+    /// <summary>Есть ли смысл учитывать нажатие (перо и нажатие реально меняется).</summary>
+    public bool PressureActive => FromStylus && Pressure < 0.999 && Pressure > 0.02;
+
     public bool Shift => (Mods & ModifierKeys.Shift) != 0;
     public bool Alt => (Mods & ModifierKeys.Alt) != 0;
     public bool Ctrl => (Mods & ModifierKeys.Control) != 0;
+
+    /// <summary>Множитель толщины для текущего ввода (1 — без нажатия).</summary>
+    public double PressureScale => PressureActive ? Math.Max(0.08, Pressure) : 1;
 
     public void Redraw() => Invalidate?.Invoke();
 }
@@ -611,7 +623,7 @@ public abstract class ShapeTool : Tool
             x2 = x1 + Math.Sign(x2 - x1 == 0 ? 1 : x2 - x1) * size;
             y2 = y1 + Math.Sign(y2 - y1 == 0 ? 1 : y2 - y1) * size;
         }
-        if (ctx.Store.GridOn && !ctx.Alt)
+        if ((ctx.Store.SnapToGrid || ctx.Store.GridOn) && !ctx.Alt)
         {
             x1 = Geo.Snap(x1, Store.GridSize); y1 = Geo.Snap(y1, Store.GridSize);
             x2 = Geo.Snap(x2, Store.GridSize); y2 = Geo.Snap(y2, Store.GridSize);
@@ -711,7 +723,7 @@ public class LineTool : ShapeTool
             double len = Math.Sqrt(Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2));
             b = new Vec(a.X + Math.Cos(snapped) * len, a.Y + Math.Sin(snapped) * len);
         }
-        if (ctx.Store.GridOn && !ctx.Alt)
+        if ((ctx.Store.SnapToGrid || ctx.Store.GridOn) && !ctx.Alt)
         {
             a = new Vec(Geo.Snap(a.X, Store.GridSize), Geo.Snap(a.Y, Store.GridSize));
             b = new Vec(Geo.Snap(b.X, Store.GridSize), Geo.Snap(b.Y, Store.GridSize));
@@ -743,17 +755,26 @@ public class FreehandTool : Tool
 {
     private readonly bool _brush;
     private readonly List<Vec> _points = new List<Vec>();
+    private readonly List<double> _widths = new List<double>();
+    private double _baseWidth = 1;
 
     public FreehandTool(bool brush) { _brush = brush; }
 
     public override string Id => _brush ? "brush" : "pencil";
     public override string Title => _brush ? "Кисть" : "Карандаш";
-    public override string Hint => "Рисуйте прямо на сцене. Толщина — в параметрах инструмента.";
+    public override string Hint => "Рисуйте прямо на сцене. Толщина — в параметрах инструмента, нажатие пера меняет нажим.";
+
+    /// <summary>Толщина без учёта нажатия (как задано в параметрах инструмента).</summary>
+    private double BaseWidth(Store store) =>
+        _brush ? Math.Max(1, store.Opts.BrushSize) : Math.Max(0.5, store.Opts.StrokeWidth);
 
     public override void Down(ToolContext ctx, Vec p, bool rightButton)
     {
         _points.Clear();
+        _widths.Clear();
+        _baseWidth = BaseWidth(ctx.Store);
         _points.Add(p);
+        _widths.Add(_baseWidth * ctx.PressureScale);
         Dragging = true;
         ctx.Redraw();
     }
@@ -764,6 +785,7 @@ public class FreehandTool : Tool
         Vec last = _points[_points.Count - 1];
         if (Math.Sqrt(Math.Pow(p.X - last.X, 2) + Math.Pow(p.Y - last.Y, 2)) < 1.2 * ctx.Px) return;
         _points.Add(p);
+        _widths.Add(_baseWidth * ctx.PressureScale);
         ctx.Redraw();
     }
 
@@ -771,7 +793,7 @@ public class FreehandTool : Tool
     {
         if (!Dragging) return;
         Dragging = false;
-        if (_points.Count < 2) { _points.Clear(); ctx.Redraw(); return; }
+        if (_points.Count < 2) { _points.Clear(); _widths.Clear(); ctx.Redraw(); return; }
 
         var pts = Geo.Simplify(_points, 0.9 * ctx.Px);
         if (pts.Count < 2) pts = new List<Vec>(_points);
@@ -790,18 +812,50 @@ public class FreehandTool : Tool
             Y = origin.Y,
             Fill = opts.Fill,
             Stroke = _brush ? opts.Fill : opts.Stroke,
-            StrokeWidth = _brush ? Math.Max(1, opts.BrushSize) : Math.Max(0.5, opts.StrokeWidth),
+            StrokeWidth = _baseWidth,
             Filled = false,
             Stroked = true,
             Smooth = opts.Smooth,
         };
+
+        // Нажим пера: если толщина заметно менялась — сохраняем профиль по точкам.
+        if (UsesPressure())
+        {
+            var widths = Geo.WidthsAlong(_points, _widths, pts);
+            bool varies = false;
+            foreach (double w in widths)
+            {
+                if (Math.Abs(w - _baseWidth) > 0.05) { varies = true; break; }
+            }
+            if (varies) shape.Widths = widths;
+        }
+
         _points.Clear();
+        _widths.Clear();
         ctx.Store.AddElement(shape, _brush ? "Мазок кисти" : "Линия карандаша");
+    }
+
+    private bool UsesPressure()
+    {
+        if (_widths.Count != _points.Count) return false;
+        foreach (double w in _widths)
+        {
+            if (Math.Abs(w - _baseWidth) > 0.05) return true;
+        }
+        return false;
     }
 
     public override void DrawOverlay(DrawingContext dc, ToolContext ctx)
     {
         if (!Dragging || _points.Count < 2) return;
+
+        if (ctx.PressureActive && UsesPressure())
+        {
+            var brush = new SolidColorBrush(Color.FromArgb(160, 111, 174, 219));
+            Renderer.DrawRibbon(dc, _points, _widths, brush, 1);
+            return;
+        }
+
         var geometry = Renderer.BuildGeometry(_points, false, ctx.Store.Opts.Smooth);
         var pen = new Pen(Accent2Brush, (_brush ? ctx.Store.Opts.BrushSize : Math.Max(1, ctx.Store.Opts.StrokeWidth)) * 1);
         pen.StartLineCap = PenLineCap.Round;
@@ -921,7 +975,7 @@ public class TextTool : Tool
         var opts = ctx.Store.Opts;
         var text = new TextElement
         {
-            Text = "Текст",
+            Text = L10n.T("Текст"),
             X = p.X,
             Y = p.Y,
             FontFamily = opts.FontFamily,

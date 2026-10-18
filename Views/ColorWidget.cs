@@ -33,7 +33,7 @@ public static class ColorPicker
         }
 
         var custom = new TextBox { Text = normalized, Width = 92, Margin = new Thickness(0, 0, 4, 0) };
-        var apply = new Button { Content = "Применить", Style = (Style)Application.Current.Resources["BtnSmall"] };
+        var apply = new Button { Content = UiKit.T("Применить"), Style = (Style)Application.Current.Resources["BtnSmall"] };
         apply.Click += (s, e) =>
         {
             onPick(ColorUtil.Normalize(custom.Text));
@@ -50,7 +50,7 @@ public static class ColorPicker
         var body = new StackPanel { Margin = new Thickness(8) };
         body.Children.Add(new TextBlock
         {
-            Text = "ОБРАЗЦЫ",
+            Text = UiKit.T("ОБРАЗЦЫ"),
             FontSize = 10,
             FontWeight = FontWeights.SemiBold,
             Foreground = (Brush)Application.Current.Resources["TxtDim"],
@@ -167,7 +167,7 @@ public class FillStrokeWidget : Canvas
             BorderBrush = (Brush)Application.Current.Resources["Line"],
             BorderThickness = new Thickness(1),
             Cursor = Cursors.Hand,
-            ToolTip = "Цвет обводки",
+            ToolTip = UiKit.T("Цвет обводки"),
         };
         _strokeInner = new Border { Width = 12, Height = 12, Cursor = Cursors.Hand };
         _strokeOuter.Child = _strokeInner;
@@ -183,7 +183,7 @@ public class FillStrokeWidget : Canvas
             BorderBrush = (Brush)Application.Current.Resources["Line"],
             BorderThickness = new Thickness(1),
             Cursor = Cursors.Hand,
-            ToolTip = "Цвет заливки",
+            ToolTip = UiKit.T("Цвет заливки"),
         };
         _fillInner = new Border { Cursor = Cursors.Hand };
         _fillOuter.Child = _fillInner;
@@ -200,14 +200,14 @@ public class FillStrokeWidget : Canvas
             StrokeEndLineCap = PenLineCap.Round,
             StrokeLineJoin = PenLineJoin.Round,
             Cursor = Cursors.Hand,
-            ToolTip = "Обменять заливку и обводку",
+            ToolTip = UiKit.T("Обменять заливку и обводку"),
         };
         SetLeft(swap, 42);
         SetTop(swap, 2);
         swap.MouseLeftButtonUp += (s, e) => { SwapRequested?.Invoke(); e.Handled = true; };
         Children.Add(swap);
 
-        var defaults = new Grid { Width = 18, Height = 18, Cursor = Cursors.Hand, ToolTip = "Чёрная обводка, белая заливка" };
+        var defaults = new Grid { Width = 18, Height = 18, Cursor = Cursors.Hand, ToolTip = UiKit.T("Чёрная обводка, белая заливка") };
         defaults.Children.Add(new Border
         {
             Width = 12, Height = 12, HorizontalAlignment = HorizontalAlignment.Left,

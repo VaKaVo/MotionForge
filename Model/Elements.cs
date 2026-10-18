@@ -54,6 +54,12 @@ public class ShapeElement : Element
     public bool Filled { get; set; } = true;
     public bool Stroked { get; set; } = true;
 
+    /// <summary>
+    /// Профиль толщины по точкам (для линий, нарисованных пером с нажатием).
+    /// null — толщина постоянная и равна <see cref="StrokeWidth"/>.
+    /// </summary>
+    public List<double> Widths { get; set; }
+
     public override ElementKind Kind => ElementKind.Shape;
     public override string TypeName => "Фигура";
 
@@ -62,6 +68,7 @@ public class ShapeElement : Element
         Points = new List<Vec>(Points),
         Closed = Closed, Fill = Fill, Stroke = Stroke, StrokeWidth = StrokeWidth,
         Smooth = Smooth, Filled = Filled, Stroked = Stroked,
+        Widths = Widths == null ? null : new List<double>(Widths),
     });
 
     /// <summary>Ширина/высота фигуры в её собственных координатах.</summary>

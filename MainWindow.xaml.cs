@@ -115,10 +115,11 @@ public partial class MainWindow : Window, IAppShell
 
         BuildHotkeys();
         _playTimer.Tick += OnPlayTick;
-        _autosaveTimer.Interval = TimeSpan.FromSeconds(45);
+        _autosaveTimer.Interval = TimeSpan.FromMinutes(1);
         _autosaveTimer.Tick += (s, e) => Autosave();
 
         AttachStore(new Store(SampleProject.Create()));
+        ApplySettings(AppSettings.Current);
         RefreshAll();
         Loaded += OnWindowLoaded;
         Closing += OnWindowClosing;
@@ -130,6 +131,103 @@ public partial class MainWindow : Window, IAppShell
         FitStage();
         Stage.Focus();
         Dispatcher.BeginInvoke(new Action(TryRestoreAutosave), DispatcherPriority.ApplicationIdle);
+
+        // Служебный режим: выгрузить собранные строки интерфейса как шаблон перевода.
+        if (L10n.TemplateRequested)
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                string path = L10n.DumpTemplate("template");
+                Close();
+            }), DispatcherPriority.ApplicationIdle);
+
+        if (Environment.GetCommandLineArgs().Length > 1 &&
+            string.Equals(Environment.GetCommandLineArgs()[1], "--prefs", StringComparison.OrdinalIgnoreCase))
+            Dispatcher.BeginInvoke(new Action(ShowSettings), DispatcherPriority.ApplicationIdle);
+    }
+
+    /* ================================================================== */
+    /*  Настройки                                                          */
+    /* ================================================================== */
+
+    /// <summary>Переносит настройки в текущую сессию: параметры инструментов, вид сцены, автосохранение.</summary>
+    public void ApplySettings(AppSettings settings)
+    {
+        if (settings == null || _store == null) return;
+
+        _store.Opts.StrokeWidth = settings.StrokeWidth;
+        _store.Opts.BrushSize = settings.BrushSize;
+        _store.Opts.Smooth = settings.SmoothStrokes;
+
+        _store.OnionOn = settings.OnionOn;
+        _store.OnionBefore = settings.OnionBefore;
+        _store.OnionAfter = settings.OnionAfter;
+        _store.GridOn = settings.GridOn;
+        if (settings.GridStep > 1) Store.GridSize = settings.GridStep;
+        _store.OutlineAll = settings.OutlineAll;
+        _store.SnapToGrid = settings.SnapToGrid;
+
+        if (settings.AutosaveMinutes <= 0) _autosaveTimer.Stop();
+        else
+        {
+            _autosaveTimer.Interval = TimeSpan.FromMinutes(settings.AutosaveMinutes);
+            if (IsLoaded) _autosaveTimer.Start();
+        }
+    }
+
+    /// <summary>Пересобирает текстовые части интерфейса (вызывается после смены языка).</summary>
+    public void RebuildUi()
+    {
+        MenuBar.Children.Clear();
+        StageBarRight.Children.Clear();
+        TimelineFooter.Children.Clear();
+        TimelineToolbarHost.Children.Clear();
+        _footerToggles.Clear();
+
+        BuildMenu();
+        BuildDocks();
+        BuildStageBar();
+        BuildTimelineFooter();
+        TimelineToolbarHost.Children.Add(_timelineToolbar);
+        RefreshAll();
+    }
+
+    /// <summary>Окно «Правка → Настройки…» (Ctrl+,).</summary>
+    public void ShowSettings()
+    {
+        var dialog = new SettingsDialog(AppSettings.Current, draft =>
+        {
+            // Живой предпросмотр языка: интерфейс успевает перестроиться до нажатия «Готово».
+            if (!string.Equals(draft.Language, L10n.Current, StringComparison.OrdinalIgnoreCase))
+            {
+                L10n.SetLanguage(draft.Language);
+                RebuildUi();
+            }
+        }) { Owner = this };
+
+        bool? result = dialog.ShowDialog();
+        if (result == true && dialog.Result != null)
+        {
+            AppSettings.Current = dialog.Result;
+            AppSettings.Current.Save();
+            if (!string.Equals(AppSettings.Current.Language, L10n.Current, StringComparison.OrdinalIgnoreCase))
+            {
+                L10n.SetLanguage(AppSettings.Current.Language);
+                RebuildUi();
+            }
+            ApplySettings(AppSettings.Current);
+            RefreshAll();
+            Store.Report(L10n.T("Настройки сохранены"));
+        }
+        else
+        {
+            // Отмена — возвращаем язык, который был до предпросмотра.
+            if (!string.Equals(AppSettings.Current.Language, L10n.Current, StringComparison.OrdinalIgnoreCase))
+            {
+                L10n.SetLanguage(AppSettings.Current.Language);
+                RebuildUi();
+            }
+        }
+        Stage.Focus();
     }
 
     private void StatusZoom_Update()
@@ -155,7 +253,7 @@ public partial class MainWindow : Window, IAppShell
             ContextMenu menu = BuildCommandMenu(commands);
             var button = new Button
             {
-                Content = group,
+                Content = L10n.T(group),
                 Style = (Style)Application.Current.Resources["MenuBtn"],
                 ContextMenu = menu,
             };
@@ -181,7 +279,7 @@ public partial class MainWindow : Window, IAppShell
 
             var item = new MenuItem
             {
-                Header = command.Title,
+                Header = L10n.T(command.Title),
                 InputGestureText = command.Keys,
                 Tag = command,
             };
@@ -207,7 +305,7 @@ public partial class MainWindow : Window, IAppShell
             }
             Cmd command = Commands.Find(id);
             if (command == null) continue;
-            var item = new MenuItem { Header = command.Title, InputGestureText = command.Keys, Tag = command };
+            var item = new MenuItem { Header = L10n.T(command.Title), InputGestureText = command.Keys, Tag = command };
             item.Click += (s, e) => RunCommand(command);
             menu.Items.Add(item);
         }
@@ -273,7 +371,7 @@ public partial class MainWindow : Window, IAppShell
 
         TimelineFooter.Children.Add(new TextBlock
         {
-            Text = "Кадры",
+            Text = UiKit.T("Кадры"),
             FontSize = 10,
             Foreground = UiKit.Res("TxtDim"),
             VerticalAlignment = VerticalAlignment.Center,
@@ -304,6 +402,8 @@ public partial class MainWindow : Window, IAppShell
 
     private Button FooterToggle(string iconId, string text, string tooltip, Func<bool> get, Action<bool> set)
     {
+        text = UiKit.T(text);
+        tooltip = UiKit.T(tooltip);
         var content = new StackPanel { Orientation = Orientation.Horizontal };
         var path = Icons.CreatePath(iconId, UiKit.Res("Txt"), 1.4);
         path.Width = 13;
@@ -430,14 +530,14 @@ public partial class MainWindow : Window, IAppShell
     private void BuildBreadcrumb()
     {
         BreadcrumbHost.Children.Clear();
-        string sceneName = string.IsNullOrWhiteSpace(_store.Project.Name) ? "Сцена 1" : "Сцена 1";
+        string sceneName = string.IsNullOrWhiteSpace(_store.Project.Name) ? UiKit.T("Сцена 1") : _store.Project.Name;
         var scene = new Button
         {
             Content = sceneName,
             Style = (Style)Application.Current.Resources["MenuBtn"],
             FontWeight = _store.EditPath.Count == 0 ? FontWeights.SemiBold : FontWeights.Normal,
             Foreground = UiKit.Res(_store.EditPath.Count == 0 ? "Txt" : "TxtDim"),
-            ToolTip = "Вернуться на сцену (Ctrl+выше)",
+            ToolTip = UiKit.T("Вернуться на сцену (Esc)"),
         };
         scene.Click += (s, e) => ExitToSymbol(null);
         BreadcrumbHost.Children.Add(scene);
@@ -446,7 +546,7 @@ public partial class MainWindow : Window, IAppShell
         {
             BreadcrumbHost.Children.Add(new TextBlock
             {
-                Text = "\u203A",
+                Text = UiKit.T("\u203A"),
                 Margin = new Thickness(2, 0, 2, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = UiKit.Res("TxtDim"),
@@ -459,7 +559,7 @@ public partial class MainWindow : Window, IAppShell
                 Style = (Style)Application.Current.Resources["MenuBtn"],
                 Foreground = UiKit.Res(current ? "Txt" : "TxtDim"),
                 FontWeight = current ? FontWeights.SemiBold : FontWeights.Normal,
-                ToolTip = "Редактировать символ «" + entry.Name + "»",
+                ToolTip = UiKit.T("Редактировать символ «") + entry.Name + "»",
             };
             button.Click += (s, e) => ExitToSymbol(id);
             BreadcrumbHost.Children.Add(button);
@@ -508,22 +608,22 @@ public partial class MainWindow : Window, IAppShell
     {
         if (_store == null) return;
         var tool = ToolRegistry.Get(_store.ToolId);
-        StatusHint.Text = tool.Title + (string.IsNullOrEmpty(tool.Hint) ? "" : "   ·   " + tool.Hint);
+        StatusHint.Text = L10n.T(tool.Title) + (string.IsNullOrEmpty(tool.Hint) ? "" : "   ·   " + L10n.T(tool.Hint));
         StatusZoom.Text = Math.Round(_store.Zoom * 100) + "%";
-        StatusDirty.Text = _store.Dirty ? "● не сохранено" : "✓ сохранено";
+        StatusDirty.Text = L10n.T(_store.Dirty ? "● не сохранено" : "✓ сохранено");
         StatusDirty.Foreground = _store.Dirty ? UiKit.Res("Warn") : UiKit.Res("Ok");
-        TimelineSummary.Text = _store.SceneLength + " кадр.   ·   " + _store.Project.Stage.Fps + " к/с" +
-                               (_store.Playing ? "   ·   воспроизведение" : "") +
-                               (_store.ActiveSymbol != null ? "   ·   символ: " + _store.ActiveSymbol.Name : "");
+        TimelineSummary.Text = _store.SceneLength + L10n.T(" кадр.   ·   ") + _store.Project.Stage.Fps + L10n.T(" к/с") +
+                               (_store.Playing ? "   ·   " + L10n.T("воспроизведение") : "") +
+                               (_store.ActiveSymbol != null ? "   ·   " + L10n.T("символ: ") + _store.ActiveSymbol.Name : "");
     }
 
     private void UpdateTitle()
     {
-        string name = string.IsNullOrWhiteSpace(_store.Project.Name) ? "Без названия" : _store.Project.Name;
+        string name = string.IsNullOrWhiteSpace(_store.Project.Name) ? L10n.T("Без названия") : _store.Project.Name;
         string symbol = _store.ActiveSymbol != null ? "  ›  " + _store.ActiveSymbol.Name : "";
         string dirty = _store.Dirty ? "•  " : "";
         Title = dirty + name + symbol + " — MotionForge";
-        DocTitle.Text = _store.FilePath ?? "не сохранён на диск";
+        DocTitle.Text = _store.FilePath ?? L10n.T("не сохранён на диск");
         BuildTabs();
     }
 
@@ -596,7 +696,7 @@ public partial class MainWindow : Window, IAppShell
             if (!(entry is MenuItem item) || !(item.Tag is Cmd command)) continue;
             item.IsEnabled = command.IsEnabled(this);
             item.Icon = command.IsChecked(this)
-                ? new TextBlock { Text = "✓", Foreground = UiKit.Res("Accent2") }
+                ? new TextBlock { Text = UiKit.T("✓"), Foreground = UiKit.Res("Accent2") }
                 : null;
         }
     }
@@ -994,7 +1094,7 @@ public partial class MainWindow : Window, IAppShell
 
     private void OnStageMouseMoved(Vec world, Point screen)
     {
-        StatusCoords.Text = "X " + Num.F(world.X, 1) + "   Y " + Num.F(world.Y, 1);
+        StatusCoords.Text = UiKit.T("X ") + Num.F(world.X, 1) + "   Y " + Num.F(world.Y, 1);
     }
 
     /* ================================================================== */
@@ -1060,7 +1160,7 @@ public partial class MainWindow : Window, IAppShell
     private void OnWindowClosing(object sender, CancelEventArgs e)
     {
         _playTimer.Stop();
-        if (_store != null && _store.Dirty)
+        if (_store != null && _store.Dirty && AppSettings.Current.ConfirmOnExit)
         {
             MessageBoxResult result = MessageBox.Show(this,
                 "Сохранить изменения в «" + _store.Project.Name + "» перед закрытием?",

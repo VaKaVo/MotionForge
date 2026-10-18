@@ -25,4 +25,11 @@
     <Resource Include="Assets\app.ico" />
   </ItemGroup>
 
+  <!-- Языковые файлы интерфейса: копируются рядом с exe, новый язык = новый json -->
+  <ItemGroup>
+    <Content Include="Localization\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
