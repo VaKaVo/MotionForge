@@ -1,0 +1,20 @@
+# Сборка .NET
+bin/
+obj/
+publish/
+*.user
+*.suo
+*.userprefs
+*.binlog
+.vs/
+.vscode/
+.idea/
+
+# Артефакты запуска и экспорта
+*.mforge
+*.gif
+*_sheet.png
+*_frame*.png
+
+# Локальные результаты самопроверки
+motionforge-*.txt

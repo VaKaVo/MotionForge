@@ -1,0 +1,40 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Сборка (Release)
+        run: dotnet build MotionForge/MotionForge.csproj -c Release --nologo
+
+      - name: Самопроверка (62 проверки)
+        shell: pwsh
+        run: |
+          $exe = "MotionForge/bin/Release/net10.0-windows/MotionForge.exe"
+          $p = Start-Process -FilePath $exe -ArgumentList "--selftest" -PassThru -Wait
+          Get-Content "$env:TEMP/motionforge-selftest.txt"
+          if ($p.ExitCode -ne 0) { throw "Самопроверка не пройдена (код $($p.ExitCode))" }
+
+      - name: Публикация сборки
+        run: dotnet publish MotionForge/MotionForge.csproj -c Release -r win-x64 --self-contained false -o publish --nologo
+
+      - name: Выгрузка артефакта
+        uses: actions/upload-artifact@v4
+        with:
+          name: MotionForge-win-x64
+          path: publish/
+          if-no-files-found: error

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>false</UseWindowsForms>
+    <RootNamespace>MotionForge</RootNamespace>
+    <AssemblyName>MotionForge</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Version>1.0.0</Version>
+    <Authors>MotionForge contributors</Authors>
+    <Product>MotionForge</Product>
+    <Description>Открытая десктопная студия 2D-анимации: таймлайн, слои, символы, твины, рисование, экспорт в GIF и спрайт-листы.</Description>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <EnableDefaultApplicationDefinition>true</EnableDefaultApplicationDefinition>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType>portable</DebugType>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+
+</Project>
