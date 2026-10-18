@@ -278,6 +278,55 @@ public static class SelfTest
         }
         catch (Exception ex) { Check("Экспорт (исключение)", false, ex.GetType().Name + ": " + ex.Message + " :: " + FirstStack(ex)); }
 
+        /* ---------- горячие клавиши ---------- */
+        try
+        {
+            Check("Буква A разбирается в Key.A", Hotkeys.ParseKey("A") == System.Windows.Input.Key.A);
+            Check("Буква Z разбирается в Key.Z (69)", (int)Hotkeys.ParseKey("Z") == 69, ((int)Hotkeys.ParseKey("Z")).ToString());
+            Check("Разные буквы дают разные клавиши", Hotkeys.ParseKey("E") != Hotkeys.ParseKey("Z")
+                && Hotkeys.ParseKey("V") != Hotkeys.ParseKey("A"));
+            Check("Ctrl+D1 разбирается (масштаб 100%)", Hotkeys.IdOf("Ctrl+D1") != null, Hotkeys.IdOf("Ctrl+D1") ?? "null");
+
+            var table = new Dictionary<string, Cmd>();
+            var missing = new List<string>();
+            var collisions = new List<string>();
+            foreach (Cmd command in Commands.All)
+            {
+                if (string.IsNullOrWhiteSpace(command.Keys)) continue;
+                string id = Hotkeys.IdOf(command.Keys);
+                if (id == null) { missing.Add(command.Id + " (" + command.Keys + ")"); continue; }
+                if (table.ContainsKey(id)) { collisions.Add(table[id].Id + " / " + command.Id + " (" + command.Keys + ")"); continue; }
+                table[id] = command;
+            }
+            Check("Каждое сочетание распознаётся", missing.Count == 0, string.Join(", ", missing));
+            Check("Нет конфликтов сочетаний", collisions.Count == 0, string.Join(", ", collisions));
+
+            string Ctrl(System.Windows.Input.Key k) => Hotkeys.Id(System.Windows.Input.ModifierKeys.Control, k);
+            string Plain(System.Windows.Input.Key k) => Hotkeys.Id(System.Windows.Input.ModifierKeys.None, k);
+
+            bool Runs(string id, string expected)
+            {
+                return table.TryGetValue(id, out Cmd c) && c.Id == expected;
+            }
+            Check("Ctrl+Z выполняет «Отменить»", Runs(Ctrl(System.Windows.Input.Key.Z), "edit.undo"),
+                table.TryGetValue(Ctrl(System.Windows.Input.Key.Z), out Cmd u) ? u.Id : "нет");
+            Check("Ctrl+S выполняет «Сохранить»", Runs(Ctrl(System.Windows.Input.Key.S), "file.save"));
+            Check("Ctrl+C выполняет «Копировать»", Runs(Ctrl(System.Windows.Input.Key.C), "edit.copy"));
+            Check("Ctrl+K открывает палитру команд", Runs(Ctrl(System.Windows.Input.Key.K), "help.palette"));
+            Check("Удаление по клавише Delete", Runs(Plain(System.Windows.Input.Key.Delete), "edit.delete"));
+            Check("Инструмент «прямоугольник» на R", Runs(Plain(System.Windows.Input.Key.R), "tool.rect"));
+            Check("Инструмент «масштаб» на Z", Runs(Plain(System.Windows.Input.Key.Z), "tool.zoom"));
+
+            int letters = 0;
+            foreach (string spec in new[] { "A", "B", "C", "D", "V", "Y", "Z" })
+            {
+                int vk = (int)Hotkeys.ParseKey(spec);
+                if (vk >= 44 && vk <= 69) letters++;
+            }
+            Check("Все буквенные сочетания в диапазоне 44…69", letters == 7, letters + "/7");
+        }
+        catch (Exception ex) { Check("Горячие клавиши (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
+
         /* ---------- отчёт ---------- */
         var report = new StringBuilder();
         report.AppendLine("MotionForge — автотест ядра");

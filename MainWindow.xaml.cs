@@ -606,68 +606,10 @@ public partial class MainWindow : Window, IAppShell
         foreach (Cmd command in Commands.All)
         {
             if (string.IsNullOrWhiteSpace(command.Keys)) continue;
-            var (mods, key) = ParseKeys(command.Keys);
-            string id = KeyId(mods, key);
+            string id = Hotkeys.IdOf(command.Keys);
             if (id == null || _hotkeys.ContainsKey(id)) continue;
             _hotkeys[id] = command;
         }
-    }
-
-    private static (ModifierKeys mods, Key key) ParseKeys(string spec)
-    {
-        ModifierKeys mods = ModifierKeys.None;
-        Key key = Key.None;
-        foreach (string raw in spec.Split('+'))
-        {
-            string part = raw.Trim();
-            switch (part)
-            {
-                case "Ctrl": mods |= ModifierKeys.Control; break;
-                case "Shift": mods |= ModifierKeys.Shift; break;
-                case "Alt": mods |= ModifierKeys.Alt; break;
-                default: key = ParseKey(part); break;
-            }
-        }
-        return (mods, key);
-    }
-
-    private static Key ParseKey(string name)
-    {
-        if (string.IsNullOrEmpty(name)) return Key.None;
-        switch (name)
-        {
-            case "Delete": return Key.Delete;
-            case "Back": return Key.Back;
-            case "Space": return Key.Space;
-            case "Home": return Key.Home;
-            case "End": return Key.End;
-            case "Up": return Key.Up;
-            case "Down": return Key.Down;
-            case "Left": return Key.Left;
-            case "Right": return Key.Right;
-            case "Enter": return Key.Enter;
-            case "Escape": return Key.Escape;
-            case "OemPlus": return Key.OemPlus;
-            case "OemMinus": return Key.OemMinus;
-            case "OemComma": return Key.OemComma;
-            case "OemPeriod": return Key.OemPeriod;
-            case "OemQuotes": return Key.OemQuotes;
-        }
-        if (name.Length == 1)
-        {
-            char c = name[0];
-            if (c >= 'A' && c <= 'Z') return (Key)c;
-            if (c >= '0' && c <= '9') return Key.D0 + (c - '0');
-        }
-        if (name.Length == 2 && name[0] == 'F' && char.IsDigit(name[1]))
-            return Key.F1 + (name[1] - '1');
-        return Key.None;
-    }
-
-    private static string KeyId(ModifierKeys mods, Key key)
-    {
-        if (key == Key.None) return null;
-        return (int)mods + ":" + (int)key;
     }
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
@@ -680,7 +622,7 @@ public partial class MainWindow : Window, IAppShell
 
         if (IsTextInputFocused())
         {
-            string onlyId = KeyId(mods, key);
+            string onlyId = Hotkeys.Id(mods, key);
             if (onlyId == null || !_hotkeys.TryGetValue(onlyId, out Cmd allowed) || !AllowedWhileTyping.Contains(allowed.Id))
                 return;
             RunCommand(allowed);
@@ -691,7 +633,7 @@ public partial class MainWindow : Window, IAppShell
         // Пробел на сцене — временная «рука» (панорама), а не воспроизведение.
         if (key == Key.Space && mods == ModifierKeys.None && Stage.IsKeyboardFocusWithin) return;
 
-        string id = KeyId(mods, key);
+        string id = Hotkeys.Id(mods, key);
         if (id == null) return;
         if (_hotkeys.TryGetValue(id, out Cmd command))
         {
