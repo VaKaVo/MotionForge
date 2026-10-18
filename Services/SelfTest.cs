@@ -383,6 +383,24 @@ public static class SelfTest
             Check("В каждом языке не меньше 40 строк", thin.Count == 0,
                 thin.Count == 0 ? languages.Count + " языков, " + totalKeys + " строк" : string.Join(", ", thin));
 
+            // Свой перевод добавляется простым копированием файла — проверим на живом примере.
+            string dropIn = Path.Combine(L10n.LocalizationFolder, "zz.json");
+            try
+            {
+                File.WriteAllText(dropIn, "{\"@name\":\"Testlang\",\"Файл\":\"Zz\"}", new UTF8Encoding(false));
+                var withNew = L10n.Languages();
+                var found = withNew.Find(l => l.Code == "zz");
+                Check("Новый файл перевода появляется в списке языков",
+                    found.Code == "zz" && found.Name == "Testlang", found.Code + " / " + found.Name);
+
+                L10n.SetLanguage("zz");
+                Check("Новый язык переводит свои строки, остальное берёт из английского",
+                    L10n.T("Файл") == "Zz" && L10n.T("Фон сцены") == "Stage background",
+                    L10n.T("Файл") + " / " + L10n.T("Фон сцены"));
+                L10n.SetLanguage("ru");
+            }
+            finally { try { File.Delete(dropIn); } catch { } }
+
             var list = L10n.Languages();
             if (list.Count > 1)
             {

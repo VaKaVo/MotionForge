@@ -19,7 +19,11 @@ public static class L10n
 {
     public const string Fallback = "en";
 
+    /// <summary>Служебный ключ в файле языка: как называется язык в списке настроек.</summary>
+    public const string NameKey = "@name";
+
     private static readonly Dictionary<string, Dictionary<string, string>> Tables = new();
+    private static readonly Dictionary<string, string> Names = new();
     private static readonly Dictionary<string, string> NativeNames = new()
     {
         { "ru", "Русский" },
@@ -51,7 +55,8 @@ public static class L10n
 
     public static string LocalizationFolder => Path.Combine(AppContext.BaseDirectory, "Localization");
 
-    /// <summary>Доступные языки: русский + все найденные файлы Localization/*.json.</summary>
+    /// <summary>Доступные языки: русский + все найденные файлы Localization/*.json.
+    /// Название берётся из ключа "@name" внутри файла, затем из встроенного списка.</summary>
     public static List<(string Code, string Name)> Languages()
     {
         var list = new List<(string, string)> { ("ru", NativeNames["ru"]) };
@@ -63,13 +68,34 @@ public static class L10n
                 {
                     string code = Path.GetFileNameWithoutExtension(file).ToLowerInvariant();
                     if (code == "ru") continue;
-                    string name = NativeNames.TryGetValue(code, out string n) ? n : code;
+                    string name = PeekName(code, file);
+                    if (string.IsNullOrWhiteSpace(name)) name = code;
                     list.Add((code, name));
                 }
             }
         }
         catch { }
         return list.OrderBy(l => l.Item1 == "ru" ? 0 : 1).ThenBy(l => l.Item2, StringComparer.CurrentCulture).ToList();
+    }
+
+    /// <summary>Название языка: сначала "@name" из файла, затем встроенный список, иначе код.</summary>
+    private static string PeekName(string code, string file)
+    {
+        if (Names.TryGetValue(code, out string cached)) return cached;
+        string name = null;
+        try
+        {
+            using (var doc = JsonDocument.Parse(File.ReadAllText(file, Encoding.UTF8)))
+            {
+                if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                    doc.RootElement.TryGetProperty(NameKey, out var value) && value.ValueKind == JsonValueKind.String)
+                    name = value.GetString();
+            }
+        }
+        catch { /* битый файл — покажем хотя бы код */ }
+        if (string.IsNullOrWhiteSpace(name) && NativeNames.TryGetValue(code, out string known)) name = known;
+        Names[code] = name ?? code;
+        return Names[code];
     }
 
     public static void SetLanguage(string code)
@@ -103,6 +129,7 @@ public static class L10n
     public static string DumpTemplate(string code)
     {
         var table = new SortedDictionary<string, string>(StringComparer.CurrentCulture);
+        table[NameKey] = "";                      // название языка для списка в настройках
         foreach (string key in Requested) table[key] = "";
         string path = Path.Combine(Path.GetTempPath(), "motionforge-lang-" + code + ".json");
         var options = new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };

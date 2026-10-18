@@ -1,8 +1,10 @@
 {
+  "@name": "Français",
   "Файл": "Fichier",
   "Правка": "Édition",
   "Вид": "Affichage",
   "Вставка": "Insertion",
+  "Изменение": "Transformation",
   "Выравнивание": "Alignement",
   "Слои": "Calques",
   "Воспроизведение": "Lecture",
