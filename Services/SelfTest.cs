@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Windows.Media.Imaging;
+using System.Xml.Linq;
 using MotionForge.Model;
 
 namespace MotionForge.Services;
@@ -222,11 +223,26 @@ public static class SelfTest
             Check("GIF: размер файла разумный", new FileInfo(gif).Length > 5000, new FileInfo(gif).Length + " байт");
 
             string sheet = Path.Combine(root, "sheet.png");
-            Exporter.ExportSpriteSheet(demo, sheet, 0.25, 5, true);
+            string sheetXml = Exporter.ExportSpriteSheet(demo, sheet, 0.25, 5, true);
             var sheetImage = new BitmapImage(new Uri(sheet));
             Check("Спрайт-лист: 5 колонок × 10 рядов",
                 sheetImage.PixelWidth == 240 * 5 && sheetImage.PixelHeight == 150 * 10,
                 sheetImage.PixelWidth + "x" + sheetImage.PixelHeight);
+
+            Check("Спрайт-лист: XML рядом с PNG", File.Exists(sheetXml) && sheetXml.EndsWith(".xml", StringComparison.OrdinalIgnoreCase),
+                sheetXml);
+            var atlas = XDocument.Load(sheetXml);
+            var subTextures = atlas.Root != null ? atlas.Root.Elements("SubTexture").ToList() : new List<XElement>();
+            Check("Спрайт-лист: XML описывает все 48 кадров", subTextures.Count == 48, subTextures.Count + " кадров");
+            Check("Спрайт-лист: XML — координаты и имя кадра 7",
+                subTextures.Count > 6 && (int)subTextures[6].Attribute("x") == 240 &&
+                (int)subTextures[6].Attribute("y") == 150 &&
+                (string)subTextures[6].Attribute("name") == "sheet_0006",
+                subTextures.Count > 6 ? subTextures[6].ToString() : "нет кадра");
+            Check("Спрайт-лист: XML — размер кадра",
+                subTextures.Count > 0 && (int)subTextures[0].Attribute("width") == 240 &&
+                (int)subTextures[0].Attribute("height") == 150,
+                subTextures.Count > 0 ? subTextures[0].ToString() : "нет кадров");
 
             var files = Exporter.ExportPngSequence(demo, Path.Combine(root, "seq.png"), 0.2, false);
             Check("PNG-секвенция: 48 файлов", files.Count == 48, files.Count.ToString());

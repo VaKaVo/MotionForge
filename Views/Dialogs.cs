@@ -307,7 +307,7 @@ public class ExportDialog : DialogBase
         _format = new ComboBox { Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
         _format.Items.Add(new ComboBoxItem { Content = UiKit.T("PNG — текущий кадр"), Tag = "png" });
         _format.Items.Add(new ComboBoxItem { Content = UiKit.T("GIF — анимация со всеми кадрами"), Tag = "gif" });
-        _format.Items.Add(new ComboBoxItem { Content = UiKit.T("Спрайт-лист (одна картинка)"), Tag = "sheet" });
+        _format.Items.Add(new ComboBoxItem { Content = UiKit.T("Спрайт-лист (PNG + XML)"), Tag = "sheet" });
         _format.Items.Add(new ComboBoxItem { Content = UiKit.T("PNG-последовательность"), Tag = "seq" });
         _format.Items.Add(new ComboBoxItem { Content = UiKit.T("SVG — векторный кадр"), Tag = "svg" });
         _format.SelectedIndex = 1;
@@ -434,6 +434,8 @@ public class ExportDialog : DialogBase
         };
         Func<bool> cancelled = () => _cancelled;
 
+        string sheetXml = null;
+
         try
         {
             switch (Format)
@@ -445,7 +447,7 @@ public class ExportDialog : DialogBase
                     Exporter.ExportGif(_store.Project, path, _scale, _fps, _transparent, 0, progress, cancelled);
                     break;
                 case "sheet":
-                    Exporter.ExportSpriteSheet(_store.Project, path, _scale, _columns, _transparent, progress);
+                    sheetXml = Exporter.ExportSpriteSheet(_store.Project, path, _scale, _columns, _transparent, progress);
                     break;
                 case "svg":
                     Exporter.ExportSvg(_store.Project, path, _frame, _transparent);
@@ -477,6 +479,7 @@ public class ExportDialog : DialogBase
             {
                 _doneText.Foreground = (Brush)Application.Current.Resources["Ok"];
                 _doneText.Text += (string.IsNullOrEmpty(_doneText.Text) ? "Готово: " : "  ") + path;
+                if (sheetXml != null) _doneText.Text += "  +  " + Path.GetFileName(sheetXml);
                 _lastFolder = Path.GetDirectoryName(path);
             }
         }
@@ -1316,6 +1319,7 @@ public class NewDocumentDialog : DialogBase
         SizeToContent = SizeToContent.Manual;
 
         _selected = Presets[3];                       // сцена по умолчанию — 960 × 600
+        _draft.Name = L10n.T("Без названия");
         _draft.Width = _selected.Width;
         _draft.Height = _selected.Height;
         _draft.Fps = _selected.Fps;

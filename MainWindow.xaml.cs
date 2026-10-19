@@ -575,7 +575,7 @@ public partial class MainWindow : Window, IAppShell
     private void BuildTabs()
     {
         TabStrip.Children.Clear();
-        string docName = string.IsNullOrWhiteSpace(_store.Project.Name) ? "Без названия" : _store.Project.Name;
+        string docName = string.IsNullOrWhiteSpace(_store.Project.Name) ? L10n.T("Без названия") : _store.Project.Name;
         bool atScene = _store.EditPath.Count == 0;
         TabStrip.Children.Add(DocTab(docName, atScene, () => ExitToSymbol(null), "Документ: сцена"));
         var path = _store.EditPath.ToList();

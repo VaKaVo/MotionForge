@@ -4,6 +4,8 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Windows;
+using System.Xml;
+using System.Xml.Linq;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MotionForge.Model;
@@ -262,7 +264,12 @@ public static class Exporter
         return target;
     }
 
-    public static void ExportSpriteSheet(Project project, string path, double scale, int columns, bool transparent,
+    /// <summary>
+    /// Спрайт-лист: все кадры одной сеткой. Рядом с PNG пишется XML в формате
+    /// Starling/Sparrow (TextureAtlas) — его читают Phaser, PixiJS, Unity-плагины и т. п.
+    /// Возвращает путь к XML.
+    /// </summary>
+    public static string ExportSpriteSheet(Project project, string path, double scale, int columns, bool transparent,
         Action<int, int> progress = null)
     {
         int length = Math.Max(1, Anim.SceneLength(project.Timeline));
@@ -292,6 +299,46 @@ public static class Exporter
         sheet.Render(visual);
         sheet.Freeze();
         SavePng(sheet, path);
+        return WriteSpriteSheetXml(project, path, cellW, cellH, columns, length);
+    }
+
+    /// <summary>XML-описание спрайт-листа (формат Starling/Sparrow).</summary>
+    private static string WriteSpriteSheetXml(Project project, string sheetPath, int cellW, int cellH, int columns, int length)
+    {
+        string prefix = Path.GetFileNameWithoutExtension(sheetPath);
+        if (prefix.EndsWith("_sheet", StringComparison.OrdinalIgnoreCase))
+            prefix = prefix.Substring(0, prefix.Length - "_sheet".Length);
+        if (string.IsNullOrWhiteSpace(prefix)) prefix = "frame";
+
+        int rows = (int)Math.Ceiling(length / (double)columns);
+        var root = new XElement("TextureAtlas",
+            new XAttribute("imagePath", Path.GetFileName(sheetPath)),
+            new XAttribute("width", cellW * columns),
+            new XAttribute("height", cellH * rows),
+            new XAttribute("fps", project.Stage.Fps));
+
+        for (int frame = 0; frame < length; frame++)
+        {
+            int col = frame % columns, row = frame / columns;
+            root.Add(new XElement("SubTexture",
+                new XAttribute("name", prefix + "_" + frame.ToString("0000", CultureInfo.InvariantCulture)),
+                new XAttribute("x", col * cellW),
+                new XAttribute("y", row * cellH),
+                new XAttribute("width", cellW),
+                new XAttribute("height", cellH)));
+        }
+
+        string xmlPath = Path.ChangeExtension(sheetPath, ".xml");
+        var document = new XDocument(new XDeclaration("1.0", "utf-8", null), root);
+        var settings = new XmlWriterSettings
+        {
+            Indent = true,
+            IndentChars = "  ",
+            Encoding = new UTF8Encoding(false),
+        };
+        using (XmlWriter writer = XmlWriter.Create(xmlPath, settings))
+            document.Save(writer);
+        return xmlPath;
     }
 
     /// <summary>Последовательность кадров: frame_0001.png … (для сборки видео в стороннем редакторе или ffmpeg).</summary>

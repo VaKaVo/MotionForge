@@ -17,7 +17,11 @@ public partial class App : Application
         Anim.TextMeasurer = new WpfTextMeasurer();
 
         // Пользовательские настройки: язык интерфейса, сетка, планшет, автосохранение.
+        // При самом первом запуске (файла настроек ещё нет) подхватываем язык системы,
+        // если для него есть перевод: иначе англоязычный пользователь видит русский UI.
+        bool firstRun = !System.IO.File.Exists(AppSettings.FilePath);
         AppSettings.Current = AppSettings.Load().Normalized();
+        if (firstRun) AppSettings.Current.Language = L10n.SystemLanguage(AppSettings.Current.Language);
         L10n.SetLanguage(AppSettings.Current.Language);
 
         if (e.Args.Any(a => string.Equals(a, "--lang-template", StringComparison.OrdinalIgnoreCase)))

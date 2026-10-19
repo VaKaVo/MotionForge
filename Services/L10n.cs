@@ -78,6 +78,19 @@ public static class L10n
         return list.OrderBy(l => l.Item1 == "ru" ? 0 : 1).ThenBy(l => l.Item2, StringComparer.CurrentCulture).ToList();
     }
 
+    /// <summary>Язык системы, если для него есть файл перевода (иначе — fallback).</summary>
+    public static string SystemLanguage(string fallback)
+    {
+        try
+        {
+            string code = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName.ToLowerInvariant();
+            if (Languages().Any(l => string.Equals(l.Code, code, StringComparison.OrdinalIgnoreCase)))
+                return code;
+        }
+        catch { }
+        return fallback;
+    }
+
     /// <summary>Название языка: сначала "@name" из файла, затем встроенный список, иначе код.</summary>
     private static string PeekName(string code, string file)
     {
