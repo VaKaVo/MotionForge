@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -743,11 +744,179 @@ public class AboutWindow : DialogBase
 
         Body.Children.Add(new TextBlock
         {
-            Text = UiKit.T("Версия 1.0  ·  .NET 10 / WPF  ·  ") + Environment.OSVersion.VersionString,
+            Text = string.Format(UiKit.T("Версия {0}  ·  .NET 10 / WPF  ·  {1}"), Updates.VersionText,
+                Environment.OSVersion.VersionString),
             Foreground = (Brush)Application.Current.Resources["TxtDim"],
         });
 
         AddButtons(Secondary("Закрыть"));
+    }
+}
+
+/* ===================================================================== */
+/*  Обновление приложения                                                 */
+/* ===================================================================== */
+
+/// <summary>Окно «Помощь → Проверить обновления…»: описание релиза, загрузка и установка.</summary>
+public class UpdateWindow : DialogBase
+{
+    private readonly UpdateInfo _info;
+    private readonly Grid _bar;
+    private readonly Border _barTrack;
+    private readonly Border _barFill;
+    private readonly TextBlock _status;
+    private readonly Button _install;
+    private double _fraction;
+    private bool _indeterminate;
+
+    public UpdateWindow(UpdateInfo info) : base("Обновление MotionForge", 560)
+    {
+        _info = info;
+
+        Body.Children.Add(Heading(string.Format(L10n.T("Доступна версия {0}"), info.Version)));
+        Body.Children.Add(Paragraph(string.Format(
+            L10n.T("Сейчас установлена версия {0}. Обновление скачается с GitHub и установится автоматически — приложение перезапустится."),
+            Updates.VersionText)));
+
+        Body.Children.Add(new TextBlock
+        {
+            Text = UiKit.T("Что нового"),
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 4, 0, 5),
+        });
+
+        Body.Children.Add(new TextBox
+        {
+            Text = PlainNotes(info.Notes),
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Height = 230,
+            Padding = new Thickness(8, 6, 8, 6),
+            Background = (Brush)Application.Current.Resources["DarkInset"],
+            Foreground = (Brush)Application.Current.Resources["TxtDim"],
+            BorderBrush = (Brush)Application.Current.Resources["Line2"],
+            FontFamily = new FontFamily("Segoe UI"),
+            FontSize = 11.5,
+        });
+
+        _bar = new Grid { Height = 6, Margin = new Thickness(0, 12, 0, 6), Visibility = Visibility.Collapsed };
+        _barTrack = new Border
+        {
+            Height = 6,
+            CornerRadius = new CornerRadius(3),
+            Background = (Brush)Application.Current.Resources["DarkInset"],
+        };
+        _barFill = new Border
+        {
+            Height = 6,
+            CornerRadius = new CornerRadius(3),
+            Background = (Brush)Application.Current.Resources["Accent2"],
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Width = 0,
+        };
+        _bar.Children.Add(_barTrack);
+        _bar.Children.Add(_barFill);
+        _barTrack.SizeChanged += (s, e) => UpdateBar();
+        Body.Children.Add(_bar);
+
+        _status = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)Application.Current.Resources["TxtDim"],
+            MinHeight = 18,
+        };
+        Body.Children.Add(_status);
+
+        _install = Primary("Обновить сейчас", Install, false);
+        if (string.IsNullOrEmpty(info.AssetUrl))
+        {
+            _install.IsEnabled = false;
+            _status.Text = L10n.T("В этом релизе нет сборки для Windows — скачайте её со страницы релиза.");
+        }
+
+        AddButtons(
+            Secondary("Страница релиза", () => Updates.OpenPage(_info.PageUrl)),
+            Secondary("Позже"),
+            Secondary("Пропустить версию", Skip),
+            _install);
+    }
+
+    private void UpdateBar()
+    {
+        _barFill.Width = Math.Max(0, _barTrack.ActualWidth * (_indeterminate ? 1 : _fraction));
+    }
+
+    private void SetProgress(double fraction)
+    {
+        _fraction = Math.Max(0, Math.Min(1, fraction));
+        UpdateBar();
+    }
+
+    private async void Install()
+    {
+        if (string.IsNullOrEmpty(_info.AssetUrl)) return;
+        _install.IsEnabled = false;
+        _bar.Visibility = Visibility.Visible;
+        _indeterminate = false;
+        SetProgress(0);
+        _status.Text = L10n.T("Загрузка обновления…");
+
+        try
+        {
+            var progress = new Progress<double>(value =>
+            {
+                SetProgress(value);
+                _status.Text = string.Format(L10n.T("Загрузка обновления… {0}%"), (int)Math.Round(value * 100));
+            });
+
+            string zip = await Updates.DownloadAsync(_info, progress);
+
+            _indeterminate = true;
+            _status.Text = L10n.T("Установка…");
+            UpdateBar();
+            await Task.Delay(150);
+
+            if (!Updates.TryInstall(zip, out string error))
+            {
+                _indeterminate = false;
+                _bar.Visibility = Visibility.Collapsed;
+                _status.Text = error;
+                _install.IsEnabled = true;
+                return;
+            }
+
+            _status.Text = L10n.T("Готово. Приложение перезапустится автоматически.");
+            await Task.Delay(800);
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            _indeterminate = false;
+            _bar.Visibility = Visibility.Collapsed;
+            _status.Text = string.Format(L10n.T("Не удалось скачать обновление: {0}"), ex.Message);
+            _install.IsEnabled = true;
+        }
+    }
+
+    private void Skip()
+    {
+        AppSettings.Current.SkippedVersion = _info.Version;
+        AppSettings.Current.Save();
+        Close();
+    }
+
+    /// <summary>Убирает разметку Markdown, чтобы описание читалось в обычном текстовом поле.</summary>
+    private static string PlainNotes(string notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes)) return L10n.T("Описание изменений не указано.");
+
+        string text = notes.Replace("\r\n", "\n").Replace("**", "").Replace("__", "").Replace("`", "");
+        text = System.Text.RegularExpressions.Regex.Replace(text, "(?m)^\\s{0,3}#{1,6}\\s*", "");
+        text = System.Text.RegularExpressions.Regex.Replace(text, "(?m)^\\s*[-*]\\s+", "• ");
+        text = System.Text.RegularExpressions.Regex.Replace(text, "(?m)^\\s*---\\s*$", "────────────");
+        return text.Trim();
     }
 }
 
@@ -927,9 +1096,10 @@ public class SettingsDialog : DialogBase
         _sections.Add(new Section
         {
             Title = "Общие",
-            About = "Язык интерфейса, подсказки в строке состояния и поведение при закрытии.",
+            About = "Язык интерфейса, подсказки в строке состояния, поведение при закрытии и проверка обновлений.",
             Words = () => Join("Язык интерфейса", "Подсказки в строке состояния",
-                               "Спрашивать при выходе с несохранёнными изменениями", "Настройки"),
+                               "Спрашивать при выходе с несохранёнными изменениями",
+                               "Проверять обновления при запуске", "Настройки"),
             Fill = host =>
             {
                 var language = UiKit.Combo(
@@ -941,6 +1111,7 @@ public class SettingsDialog : DialogBase
                 Row(host, "Язык интерфейса", language);
                 Check(host, "Подсказки в строке состояния", _draft.ShowStatusHints, v => _draft.ShowStatusHints = v);
                 Check(host, "Спрашивать при выходе с несохранёнными изменениями", _draft.ConfirmOnExit, v => _draft.ConfirmOnExit = v);
+                Check(host, "Проверять обновления при запуске", _draft.CheckUpdates, v => _draft.CheckUpdates = v);
                 Note(host, "Файл настроек: %APPDATA%\\MotionForge\\settings.json");
             },
             Reset = s =>
@@ -948,6 +1119,7 @@ public class SettingsDialog : DialogBase
                 s.Language = "ru";
                 s.ShowStatusHints = true;
                 s.ConfirmOnExit = true;
+                s.CheckUpdates = true;
             },
         });
 

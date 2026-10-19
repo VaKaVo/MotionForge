@@ -21,6 +21,8 @@ public interface IAppShell
     void ShowCommandPalette();
     void ShowHelp();
     void ShowAbout();
+    /// <summary>Проверяет обновления на GitHub (ручной вызов из меню «Помощь»).</summary>
+    void CheckUpdates();
     void CreateSymbolFromSelection();
     void ZoomBy(double factor);
     void ZoomTo(double zoom);
@@ -239,6 +241,7 @@ public static class Commands
     private static void BuildHelp()    {
         Add("help.palette", "Помощь", "Палитра команд", "Ctrl+K", s => s.ShowCommandPalette());
         Add("help.keys", "Помощь", "Горячие клавиши", "F1", s => s.ShowHelp());
+        Add("help.updates", "Помощь", "Проверить обновления…", "", s => s.CheckUpdates());
         Add("help.about", "Помощь", "О программе", "", s => s.ShowAbout());
     }
 

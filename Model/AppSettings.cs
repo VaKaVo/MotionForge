@@ -35,6 +35,11 @@ public class AppSettings
     /// <summary>Версия формата файла настроек: нужна для разовых миграций (0 — файл до 1.0.1).</summary>
     public int SettingsVersion = 0;
 
+    /* --- обновления --- */
+    public bool CheckUpdates = true;           // проверять обновления при запуске
+    public string SkippedVersion = "";         // версия, которую попросили больше не предлагать
+    public DateTime LastUpdateCheck = DateTime.MinValue;  // время последней проверки (UTC)
+
     /* --- планшет --- */
     public bool TabletEnabled = true;         // обрабатывать перо отдельно от мыши
     public bool TabletPressure = true;        // сила нажатия → толщина линии

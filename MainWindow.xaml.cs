@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -147,6 +148,9 @@ public partial class MainWindow : Window, IAppShell
             Dispatcher.BeginInvoke(new Action(ShowSettings), DispatcherPriority.ApplicationIdle);
         else if (string.Equals(flag, "--newdoc", StringComparison.OrdinalIgnoreCase))
             Dispatcher.BeginInvoke(new Action(NewProject), DispatcherPriority.ApplicationIdle);
+
+        if (AppSettings.Current.CheckUpdates)
+            Dispatcher.BeginInvoke(new Action(AutoCheckUpdates), DispatcherPriority.ApplicationIdle);
     }
 
     /* ================================================================== */
@@ -991,6 +995,53 @@ public partial class MainWindow : Window, IAppShell
     {
         new AboutWindow { Owner = this }.ShowDialog();
         Stage.Focus();
+    }
+
+    /* --------------------------- обновления --------------------------- */
+
+    /// <summary>Ручная проверка из меню «Помощь»: всегда показывает результат.</summary>
+    public void CheckUpdates() => _ = CheckForUpdatesAsync(false);
+
+    private async void AutoCheckUpdates()
+    {
+        // Не мешаем восстановлению автосохранения и первому кадру.
+        await Task.Delay(3500);
+        if (!IsLoaded) return;
+        if ((DateTime.UtcNow - AppSettings.Current.LastUpdateCheck).TotalHours < 12) return;
+        await CheckForUpdatesAsync(true);
+    }
+
+    private async Task CheckForUpdatesAsync(bool silent)
+    {
+        if (!silent) Store.Report(L10n.T("Проверка обновлений…"));
+        try
+        {
+            UpdateInfo info = await Updates.CheckAsync();
+
+            AppSettings.Current.LastUpdateCheck = DateTime.UtcNow;
+            AppSettings.Current.Save();
+
+            if (info == null)
+            {
+                if (!silent)
+                    MessageBox.Show(this, L10n.T("У вас последняя версия MotionForge."), "MotionForge",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Эту версию пользователь попросил больше не предлагать при запуске.
+            if (silent && AppSettings.Current.SkippedVersion == info.Version) return;
+            if (!IsLoaded) return;
+
+            new UpdateWindow(info) { Owner = this }.ShowDialog();
+            Stage.Focus();
+        }
+        catch
+        {
+            if (!silent)
+                MessageBox.Show(this, L10n.T("Не удалось проверить обновления. Проверьте подключение к сети."), "MotionForge",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     public void CreateSymbolFromSelection()

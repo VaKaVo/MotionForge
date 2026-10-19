@@ -10,7 +10,7 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <Version>1.0.1</Version>
+    <Version>1.1.0</Version>
     <Authors>MotionForge contributors</Authors>
     <Product>MotionForge</Product>
     <Description>Открытая десктопная студия 2D-анимации: таймлайн, слои, символы, твины, рисование, экспорт в GIF и спрайт-листы.</Description>

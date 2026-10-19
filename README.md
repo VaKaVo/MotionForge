@@ -56,8 +56,12 @@ no third-party libraries — only the base .NET assemblies. MIT licensed.
   single JSON file.
 * Dockable layout: panels can be hidden and resized with splitter bars.
 * Autosave and session recovery, dark theme, status bar with coordinates.
-* Built-in **self-test** (`--selftest`): 118 checks covering the core, geometry, undo, save and
-  load, localisation, settings and every exporter.
+* **Automatic updates**: the app checks GitHub Releases at startup (can be turned off in
+  settings), shows what's new and installs the new build itself — downloads the archive,
+  replaces the files after exiting and starts again. There's also «Help → Check for
+  Updates…» for a manual check.
+* Built-in **self-test** (`--selftest`): 125 checks covering the core, geometry, undo, save and
+  load, localisation, settings, updates and every exporter.
 
 ### Export
 
@@ -342,8 +346,12 @@ compatibility.
   меню, остальное подставляется из английского. Свой язык добавляется одним JSON-файлом.
 * Настраиваемая раскладка: панели можно скрывать и перетаскивать (разделители между доками).
 * Автосохранение и восстановление сессии, тёмная тема, статусная строка с координатами.
-* Встроенная **самопроверка** (`--selftest`): 118 проверок ядра, геометрии, отмены,
-  сохранения/загрузки, локализации, настроек и всех экспортёров.
+* **Автообновление**: при запуске приложение тихо спрашивает GitHub Releases (можно выключить
+  в настройках), показывает список изменений и ставит новую сборку само — скачивает архив,
+  после выхода заменяет файлы и запускает приложение заново. Для ручной проверки есть
+  «Помощь → Проверить обновления…».
+* Встроенная **самопроверка** (`--selftest`): 125 проверок ядра, геометрии, отмены,
+  сохранения/загрузки, локализации, настроек, обновлений и всех экспортёров.
 
 ### Экспорт
 | Формат | Что получается |

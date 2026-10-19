@@ -94,6 +94,21 @@ public static class SelfTest
         }
         catch (Exception ex) { Check("Цвет (исключение)", false, ex.Message); }
 
+        /* ---------- обновления ---------- */
+        try
+        {
+            Check("Версия из тега «v1.2.3»", Updates.ParseVersion("v1.2.3") == new Version(1, 2, 3),
+                Updates.ParseVersion("v1.2.3")?.ToString());
+            Check("Версия из тега без «v»", Updates.ParseVersion("2.0") == new Version(2, 0, 0),
+                Updates.ParseVersion("2.0")?.ToString());
+            Check("Версия из тега с суффиксом", Updates.ParseVersion("v1.1.0-beta") == new Version(1, 1, 0));
+            Check("Мусорный тег не разбирается", Updates.ParseVersion("release") == null);
+            Check("Новая версия определяется", Updates.IsNewer("v9.9.9", new Version(1, 0, 1)));
+            Check("Текущая версия не считается новой", !Updates.IsNewer("v1.0.1", new Version(1, 0, 1, 0)));
+            Check("Старая версия не считается новой", !Updates.IsNewer("v0.9.9", new Version(1, 0, 1)));
+        }
+        catch (Exception ex) { Check("Обновления (исключение)", false, ex.Message); }
+
         /* ---------- демо-проект и твины ---------- */
         Project demo = null;
         try
