@@ -1007,7 +1007,7 @@ public class SettingsDialog : DialogBase
             {
                 s.StrokeWidth = 1;
                 s.BrushSize = 16;
-                s.SmoothStrokes = false;
+                s.SmoothStrokes = true;
             },
         });
 

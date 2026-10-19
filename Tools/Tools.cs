@@ -783,7 +783,7 @@ public class FreehandTool : Tool
     {
         if (!Dragging) return;
         Vec last = _points[_points.Count - 1];
-        if (Math.Sqrt(Math.Pow(p.X - last.X, 2) + Math.Pow(p.Y - last.Y, 2)) < 1.2 * ctx.Px) return;
+        if (Math.Sqrt(Math.Pow(p.X - last.X, 2) + Math.Pow(p.Y - last.Y, 2)) < 0.8 * ctx.Px) return;
         _points.Add(p);
         _widths.Add(_baseWidth * ctx.PressureScale);
         ctx.Redraw();
@@ -793,6 +793,12 @@ public class FreehandTool : Tool
     {
         if (!Dragging) return;
         Dragging = false;
+        if (_points.Count == 1)
+        {
+            // Одиночный щелчок — точка-«капля» толщиной кисти.
+            _points.Add(new Vec(_points[0].X + 0.01, _points[0].Y + 0.01));
+            _widths.Add(_widths[0]);
+        }
         if (_points.Count < 2) { _points.Clear(); _widths.Clear(); ctx.Redraw(); return; }
 
         var pts = Geo.Simplify(_points, 0.9 * ctx.Px);
@@ -815,13 +821,14 @@ public class FreehandTool : Tool
             StrokeWidth = _baseWidth,
             Filled = false,
             Stroked = true,
-            Smooth = opts.Smooth,
+            Smooth = opts.FreehandSmooth,
         };
 
         // Нажим пера: если толщина заметно менялась — сохраняем профиль по точкам.
         if (UsesPressure())
         {
             var widths = Geo.WidthsAlong(_points, _widths, pts);
+            SmoothWidths(widths);
             bool varies = false;
             foreach (double w in widths)
             {
@@ -833,6 +840,15 @@ public class FreehandTool : Tool
         _points.Clear();
         _widths.Clear();
         ctx.Store.AddElement(shape, _brush ? "Мазок кисти" : "Линия карандаша");
+    }
+
+    /// <summary>Лёгкое сглаживание профиля нажима: убирает дрожание толщины между событиями.</summary>
+    private void SmoothWidths(List<double> widths)
+    {
+        if (widths == null || widths.Count < 3) return;
+        var copy = new List<double>(widths);
+        for (int i = 1; i < widths.Count - 1; i++)
+            widths[i] = (copy[i - 1] + copy[i] * 2 + copy[i + 1]) / 4;
     }
 
     private bool UsesPressure()
@@ -852,11 +868,11 @@ public class FreehandTool : Tool
         if (ctx.PressureActive && UsesPressure())
         {
             var brush = new SolidColorBrush(Color.FromArgb(160, 111, 174, 219));
-            Renderer.DrawRibbon(dc, _points, _widths, brush, 1);
+            Renderer.DrawRibbon(dc, _points, _widths, brush, 1, ctx.Store.Opts.FreehandSmooth);
             return;
         }
 
-        var geometry = Renderer.BuildGeometry(_points, false, ctx.Store.Opts.Smooth);
+        var geometry = Renderer.BuildGeometry(_points, false, ctx.Store.Opts.FreehandSmooth);
         var pen = new Pen(Accent2Brush, (_brush ? ctx.Store.Opts.BrushSize : Math.Max(1, ctx.Store.Opts.StrokeWidth)) * 1);
         pen.StartLineCap = PenLineCap.Round;
         pen.EndLineCap = PenLineCap.Round;

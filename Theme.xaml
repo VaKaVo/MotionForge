@@ -100,6 +100,43 @@
     </Style.Triggers>
   </Style>
 
+  <!-- Цветовой ползунок: градиентная дорожка и круглый бегунок (палитра RGB) -->
+  <Style x:Key="ColorSlider" TargetType="Slider">
+    <Setter Property="Height" Value="18" />
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="IsMoveToPointEnabled" Value="True" />
+    <Setter Property="SmallChange" Value="1" />
+    <Setter Property="LargeChange" Value="16" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Slider">
+          <Grid>
+            <Border Height="12" CornerRadius="3" VerticalAlignment="Center"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{StaticResource Line}" BorderThickness="1" />
+            <Track x:Name="PART_Track">
+              <Track.DecreaseRepeatButton>
+                <RepeatButton Style="{StaticResource SbPage}" />
+              </Track.DecreaseRepeatButton>
+              <Track.Thumb>
+                <Thumb Width="10" Height="16">
+                  <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                      <Border CornerRadius="2" Background="#F2F2F2" BorderBrush="#101010" BorderThickness="1" />
+                    </ControlTemplate>
+                  </Thumb.Template>
+                </Thumb>
+              </Track.Thumb>
+              <Track.IncreaseRepeatButton>
+                <RepeatButton Style="{StaticResource SbPage}" />
+              </Track.IncreaseRepeatButton>
+            </Track>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- ================================================================= -->
   <!--  Базовое                                                          -->
   <!-- ================================================================= -->

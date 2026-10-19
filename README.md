@@ -28,9 +28,16 @@ no third-party libraries — only the base .NET assemblies. MIT licensed.
   pen (curves), text, fill, eraser, eyedropper, hand (pan), zoom.
 * Colour: fill and stroke, stroke width, a 216-colour web-safe palette, default swatches, quick
   swap and reset.
+* Colour picker with an **HSV wheel** (hue by angle, saturation by radius), brightness, R/G/B
+  sliders with gradients, numeric fields and HEX input; the colour is applied when the mouse is
+  released, so dragging does not flood the undo history.
 * Text with font, size, weight and alignment.
 * Grouping, stacking order, flip, rotate, align and distribute objects.
 * Snap to grid, modifier keys while drawing (Shift/Alt).
+* Smooth freehand strokes: the path is fitted with a Catmull-Rom curve, and pressure profiles are
+  drawn as a continuous ribbon, so a line never breaks apart where it crosses itself.
+* Images: `Ctrl+I` imports a file; `Ctrl+V` pastes a screenshot or an image copied in Explorer, and
+  repeated pastes cascade instead of covering each other.
 
 ### Application
 * **Undo/redo** (snapshot history, up to 90 steps).
@@ -49,7 +56,7 @@ no third-party libraries — only the base .NET assemblies. MIT licensed.
   single JSON file.
 * Dockable layout: panels can be hidden and resized with splitter bars.
 * Autosave and session recovery, dark theme, status bar with coordinates.
-* Built-in **self-test** (`--selftest`): 107 checks covering the core, geometry, undo, save and
+* Built-in **self-test** (`--selftest`): 118 checks covering the core, geometry, undo, save and
   load, localisation, settings and every exporter.
 
 ### Export
@@ -200,6 +207,7 @@ Development and documentation flags:
 | Import image / export | `Ctrl+I` / `Ctrl+E` |
 | Undo / redo | `Ctrl+Z` / `Ctrl+Y` |
 | Copy / cut / paste / duplicate / delete | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` / `Ctrl+D` / `Delete` |
+| Paste a screenshot or image file | `Ctrl+V` |
 | Select all / deselect | `Ctrl+A` / `Ctrl+Shift+A` |
 | Group / ungroup | `Ctrl+G` / `Ctrl+Shift+G` |
 | Convert to symbol / enter / exit | `F8` / double click / `Ctrl+↑` |
@@ -306,9 +314,16 @@ compatibility.
   рука (панорама), масштаб.
 * Работа с цветом: заливка и обводка, толщина, палитра из 216 веб-безопасных образцов,
   образцы по умолчанию, быстрый обмен/сброс цветов.
+* Палитра с **цветовым кругом HSV** (оттенок — угол, насыщенность — радиус), яркостью,
+  ползунками R/G/B с градиентами, числовыми полями и вводом HEX; цвет применяется при
+  отпускании мыши, поэтому перетаскивание не засоряет историю отмены.
 * Текст с выбором шрифта, размера, начертания и выравнивания.
 * Группировка, порядок наложения, отражение, поворот, выравнивание и распределение объектов.
 * Привязка к сетке, автодополнение помощников при рисовании (Shift/Alt).
+* Ровные росчерки: линия сглаживается кривой Catmull-Rom, а профиль нажима рисуется сплошной
+  «лентой» — штрих не разрывается там, где он пересекает сам себя.
+* Изображения: `Ctrl+I` импортирует файл, `Ctrl+V` вставляет скриншот или картинку, скопированную
+  в проводнике; повторные вставки идут каскадом и не ложатся друг на друга.
 
 ### Программа
 * **Отмена/повтор** (история снимками, до 90 шагов).
@@ -327,7 +342,7 @@ compatibility.
   меню, остальное подставляется из английского. Свой язык добавляется одним JSON-файлом.
 * Настраиваемая раскладка: панели можно скрывать и перетаскивать (разделители между доками).
 * Автосохранение и восстановление сессии, тёмная тема, статусная строка с координатами.
-* Встроенная **самопроверка** (`--selftest`): 107 проверок ядра, геометрии, отмены,
+* Встроенная **самопроверка** (`--selftest`): 118 проверок ядра, геометрии, отмены,
   сохранения/загрузки, локализации, настроек и всех экспортёров.
 
 ### Экспорт
@@ -479,6 +494,7 @@ dotnet run -c Release -- --selftest
 | Импорт изображения / экспорт | `Ctrl+I` / `Ctrl+E` |
 | Отменить / повторить | `Ctrl+Z` / `Ctrl+Y` |
 | Копировать / вырезать / вставить / дублировать / удалить | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` / `Ctrl+D` / `Delete` |
+| Вставить скриншот или файл изображения | `Ctrl+V` |
 | Выделить всё / снять выделение | `Ctrl+A` / `Ctrl+Shift+A` |
 | Сгруппировать / разгруппировать | `Ctrl+G` / `Ctrl+Shift+G` |
 | Преобразовать в символ / войти / выйти | `F8` / двойной щелчок / `Ctrl+↑` |

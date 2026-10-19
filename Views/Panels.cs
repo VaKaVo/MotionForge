@@ -292,17 +292,24 @@ public class PropertiesPanel : StackPanel
                 break;
 
             case "line":
+                panel.Children.Add(UiKit.PropRow("Цвет", 74, StrokeButton()));
+                panel.Children.Add(UiKit.PropRow("Толщина", 74,
+                    UiKit.Number(opts.StrokeWidth, v => PaintOps.SetStrokeWidth(Store, v), 0.5, 56, 0, 200)));
+                break;
+
             case "pencil":
                 panel.Children.Add(UiKit.PropRow("Цвет", 74, StrokeButton()));
                 panel.Children.Add(UiKit.PropRow("Толщина", 74,
                     UiKit.Number(opts.StrokeWidth, v => PaintOps.SetStrokeWidth(Store, v), 0.5, 56, 0, 200)));
                 panel.Children.Add(UiKit.Row(
-                    UiKit.Check("Сглаживание", opts.Smooth, v => { opts.Smooth = v; ApplySelection(e => { if (e is ShapeElement s) s.Smooth = v; }, "Сглаживание", true); })));
+                    UiKit.Check("Сглаживание", opts.FreehandSmooth, v => opts.FreehandSmooth = v)));
                 break;
 
             case "brush":
                 panel.Children.Add(UiKit.PropRow("Цвет", 74, FillButton()));
                 panel.Children.Add(UiKit.PropRow("Размер", 74, UiKit.Number(opts.BrushSize, v => opts.BrushSize = v, 1, 56, 1, 200)));
+                panel.Children.Add(UiKit.Row(
+                    UiKit.Check("Сглаживание", opts.FreehandSmooth, v => opts.FreehandSmooth = v)));
                 break;
 
             case "text":

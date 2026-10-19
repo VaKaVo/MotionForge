@@ -13,6 +13,8 @@ public interface IAppShell
     void OpenProject();
     void SaveProject(bool saveAs);
     void ImportImage();
+    /// <summary>Вставляет изображение из буфера обмена (скриншот, картинка или файл).</summary>
+    bool PasteImage(byte[] data, string fileName);
     void ShowExportDialog();
     void ShowStageSettings();
     void ShowSettings();
@@ -114,7 +116,7 @@ public static class Commands
         Add("edit.redo", "Правка", "Повторить", "Ctrl+Y", s => { s.Store.Redo(); s.RefreshAll(); }, s => s.Store.CanRedo);
         Add("edit.copy", "Правка", "Копировать", "Ctrl+C", DoCopy, s => s.Store.Selection.Count > 0);
         Add("edit.cut", "Правка", "Вырезать", "Ctrl+X", s => { DoCopy(s); s.Store.DeleteSelection(); }, s => s.Store.Selection.Count > 0);
-        Add("edit.paste", "Правка", "Вставить", "Ctrl+V", DoPaste, s => Clipboard.Count > 0);
+        Add("edit.paste", "Правка", "Вставить", "Ctrl+V", DoPaste, s => Clipboard.Count > 0 || HasClipboardImage());
         Add("edit.duplicate", "Правка", "Дублировать", "Ctrl+D", s => s.Store.DuplicateSelection(), s => s.Store.Selection.Count > 0);
         Add("edit.delete", "Правка", "Удалить", "Delete", s => s.Store.DeleteSelection(), s => s.Store.Selection.Count > 0);
         Add("edit.selectAll", "Правка", "Выделить всё", "Ctrl+A", s =>
@@ -250,17 +252,76 @@ public static class Commands
 
     private static void DoPaste(IAppShell shell)
     {
-        if (Clipboard.Count == 0) return;
-        var copies = new List<Element>();
-        foreach (var e in Clipboard)
+        if (Clipboard.Count > 0)
         {
-            var copy = e.Clone();
-            copy.Id = Ids.New("el");
-            copy.X += 24;
-            copy.Y += 24;
-            copies.Add(copy);
+            var copies = new List<Element>();
+            foreach (var e in Clipboard)
+            {
+                var copy = e.Clone();
+                copy.Id = Ids.New("el");
+                copy.X += 24;
+                copy.Y += 24;
+                copies.Add(copy);
+            }
+            shell.Store.AddElementsToCurrentKeyframe(copies, "Вставить");
+            return;
         }
-        shell.Store.AddElementsToCurrentKeyframe(copies, "Вставить");
+
+        PasteImageFromClipboard(shell);
+    }
+
+    /// <summary>Есть ли в системном буфере картинка (растровая или файл изображения).</summary>
+    private static bool HasClipboardImage()
+    {
+        try
+        {
+            if (System.Windows.Clipboard.ContainsImage()) return true;
+            if (System.Windows.Clipboard.ContainsFileDropList())
+            {
+                foreach (string file in System.Windows.Clipboard.GetFileDropList())
+                    if (IsImageFile(file)) return true;
+            }
+        }
+        catch { /* буфер может быть занят другим приложением */ }
+        return false;
+    }
+
+    /// <summary>Ctrl+V для картинки: скриншот из буфера или скопированный файл изображения.</summary>
+    private static void PasteImageFromClipboard(IAppShell shell)
+    {
+        try
+        {
+            if (System.Windows.Clipboard.ContainsImage())
+            {
+                System.Windows.Media.Imaging.BitmapSource image = System.Windows.Clipboard.GetImage();
+                if (image != null)
+                {
+                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
+                    using (var stream = new System.IO.MemoryStream())
+                    {
+                        encoder.Save(stream);
+                        if (shell.PasteImage(stream.ToArray(), "clipboard.png")) return;
+                    }
+                }
+            }
+
+            if (System.Windows.Clipboard.ContainsFileDropList())
+            {
+                foreach (string file in System.Windows.Clipboard.GetFileDropList())
+                {
+                    if (!IsImageFile(file)) continue;
+                    if (shell.PasteImage(System.IO.File.ReadAllBytes(file), System.IO.Path.GetFileName(file))) return;
+                }
+            }
+        }
+        catch { }
+    }
+
+    private static bool IsImageFile(string path)
+    {
+        string ext = System.IO.Path.GetExtension(path ?? "").ToLowerInvariant();
+        return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".gif";
     }
 
     private static void Flip(IAppShell shell, bool horizontal)

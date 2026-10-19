@@ -40,6 +40,53 @@ public static class ColorUtil
 
     public static string Argb(byte a, byte r, byte g, byte b) => $"#{a:X2}{r:X2}{g:X2}{b:X2}";
 
+    /// <summary>RGB → HSV: h в градусах 0..360, s и v — 0..1.</summary>
+    public static void RgbToHsv(byte r, byte g, byte b, out double h, out double s, out double v)
+    {
+        double rr = r / 255.0, gg = g / 255.0, bb = b / 255.0;
+        double max = Math.Max(rr, Math.Max(gg, bb));
+        double min = Math.Min(rr, Math.Min(gg, bb));
+        double delta = max - min;
+
+        v = max;
+        s = max <= 0 ? 0 : delta / max;
+        if (delta <= 0)
+        {
+            h = 0;
+            return;
+        }
+
+        if (max == rr) h = 60 * (((gg - bb) / delta) % 6);
+        else if (max == gg) h = 60 * ((bb - rr) / delta + 2);
+        else h = 60 * ((rr - gg) / delta + 4);
+
+        if (h < 0) h += 360;
+    }
+
+    /// <summary>HSV → RGB: h в градусах 0..360, s и v — 0..1.</summary>
+    public static void HsvToRgb(double h, double s, double v, out byte r, out byte g, out byte b)
+    {
+        h = ((h % 360) + 360) % 360;
+        s = Math.Max(0, Math.Min(1, s));
+        v = Math.Max(0, Math.Min(1, v));
+
+        double c = v * s;
+        double x = c * (1 - Math.Abs((h / 60) % 2 - 1));
+        double m = v - c;
+
+        double rr, gg, bb;
+        if (h < 60) { rr = c; gg = x; bb = 0; }
+        else if (h < 120) { rr = x; gg = c; bb = 0; }
+        else if (h < 180) { rr = 0; gg = c; bb = x; }
+        else if (h < 240) { rr = 0; gg = x; bb = c; }
+        else if (h < 300) { rr = x; gg = 0; bb = c; }
+        else { rr = c; gg = 0; bb = x; }
+
+        r = (byte)Math.Round((rr + m) * 255);
+        g = (byte)Math.Round((gg + m) * 255);
+        b = (byte)Math.Round((bb + m) * 255);
+    }
+
     /// <summary>Опорная смена прозрачности цвета (сохраняя исходную альфу).</summary>
     public static string WithAlpha(string hex, double alpha)
     {

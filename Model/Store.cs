@@ -14,6 +14,8 @@ public class ToolOptions
     public bool Filled = true;
     public bool Stroked = true;
     public bool Smooth = false;
+    /// <summary>Сглаживать новые росчерки кисти и карандаша (настройка «Рисование»).</summary>
+    public bool FreehandSmooth = true;
     public string FontFamily = "Segoe UI";
     public double FontSize = 72;
     public bool Bold = true;

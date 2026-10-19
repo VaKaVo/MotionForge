@@ -47,12 +47,52 @@ public static class SelfTest
             Check("Упрощение линии уменьшает точки", simplified.Count < dense.Count / 2,
                 dense.Count + " → " + simplified.Count);
 
+            var smoothPts = new List<Vec>();
+            var smoothWidths = new List<double>();
+            Geo.SmoothPolyline(new List<Vec> { new Vec(0, 0), new Vec(50, 0), new Vec(100, 20) },
+                new List<double> { 4, 10, 16 }, 4, smoothPts, smoothWidths);
+            Check("Сглаживание ленты: концы на месте",
+                smoothPts.Count > 1 && Math.Abs(smoothPts[0].X) < 1e-9 && Math.Abs(smoothPts[0].Y) < 1e-9 &&
+                Math.Abs(smoothPts[smoothPts.Count - 1].X - 100) < 1e-9 &&
+                Math.Abs(smoothPts[smoothPts.Count - 1].Y - 20) < 1e-9,
+                smoothPts.Count + " точек");
+            Check("Сглаживание ленты: плотность и толщина",
+                smoothPts.Count == 9 && smoothWidths.Count == 9 &&
+                Math.Abs(smoothWidths[0] - 4) < 1e-6 && Math.Abs(smoothWidths[8] - 16) < 1e-6,
+                smoothPts.Count + " точек, " + smoothWidths[0].ToString("0.##") + "…" +
+                smoothWidths[smoothWidths.Count - 1].ToString("0.##"));
+
             Mat m = Mat.FromTransform(100, 50, 90, 1, 1);
             Vec p = m.Apply(new Vec(10, 0));
             Check("Матрица: поворот 90°", Math.Abs(p.X - 100) < 0.001 && Math.Abs(p.Y - 60) < 0.001, p.ToString());
             Check("Матрица: обратное преобразование", m.TryInvert(out Mat inv) && Math.Abs(inv.Apply(p).X - 10) < 0.001);
         }
         catch (Exception ex) { Check("Геометрия (исключение)", false, ex.Message); }
+
+        /* ---------- цвет ---------- */
+        try
+        {
+            ColorUtil.HsvToRgb(0, 1, 1, out byte red, out byte green, out byte blue);
+            Check("HSV: красный", red == 255 && green == 0 && blue == 0, ColorUtil.ToHex(red, green, blue));
+            ColorUtil.HsvToRgb(120, 1, 1, out red, out green, out blue);
+            Check("HSV: зелёный", red == 0 && green == 255 && blue == 0, ColorUtil.ToHex(red, green, blue));
+            ColorUtil.HsvToRgb(240, 1, 1, out red, out green, out blue);
+            Check("HSV: синий", red == 0 && green == 0 && blue == 255, ColorUtil.ToHex(red, green, blue));
+            ColorUtil.HsvToRgb(0, 1, 0, out red, out green, out blue);
+            Check("HSV: нулевая яркость — чёрный", red == 0 && green == 0 && blue == 0, ColorUtil.ToHex(red, green, blue));
+
+            ColorUtil.RgbToHsv(255, 0, 0, out double h1, out double s1, out double v1);
+            Check("RGB → HSV: красный", Math.Abs(h1) < 1e-6 && Math.Abs(s1 - 1) < 1e-6 && Math.Abs(v1 - 1) < 1e-6,
+                $"h={h1:0.##} s={s1:0.##} v={v1:0.##}");
+            ColorUtil.HsvToRgb(210, 0.6, 0.8, out red, out green, out blue);
+            ColorUtil.RgbToHsv(red, green, blue, out double h2, out double s2, out double v2);
+            Check("HSV → RGB → HSV: без потерь",
+                Math.Abs(h2 - 210) < 1 && Math.Abs(s2 - 0.6) < 0.01 && Math.Abs(v2 - 0.8) < 0.01,
+                $"h={h2:0.##} s={s2:0.##} v={v2:0.##}");
+            ColorUtil.RgbToHsv(128, 128, 128, out _, out double s3, out double v3);
+            Check("Серый: насыщенность 0", Math.Abs(s3) < 1e-6 && Math.Abs(v3 - 0.502) < 0.01);
+        }
+        catch (Exception ex) { Check("Цвет (исключение)", false, ex.Message); }
 
         /* ---------- демо-проект и твины ---------- */
         Project demo = null;
@@ -286,6 +326,45 @@ public static class SelfTest
             Check("Пиксель: обводка красная", edge[2] > 200 && edge[0] < 60, $"B={edge[0]} G={edge[1]} R={edge[2]}");
             Check("Пиксель: фон белый", corner[0] > 240 && corner[1] > 240 && corner[2] > 240, $"B={corner[0]} G={corner[1]} R={corner[2]}");
             Check("Пиксель: прозрачный фон", CheckAlpha(probe, probeBitmap));
+
+            // «Лента» с нажимом: самопересечение заливается целиком (Nonzero), а не вырезается дыркой.
+            var ribbon = new Project();
+            ribbon.Stage.Width = 200; ribbon.Stage.Height = 200; ribbon.Stage.Background = "#FFFFFF";
+            var ribbonLayer = new Layer { Name = "Слой 1" };
+            var ribbonKey = new Keyframe { Index = 0, Duration = 1 };
+            ribbonKey.Elements.Add(new ShapeElement
+            {
+                Points = new List<Vec> { new Vec(-40, -40), new Vec(40, 40), new Vec(40, -40), new Vec(-40, 40) },
+                Widths = new List<double> { 20, 20, 20, 20 },
+                Closed = false, Smooth = false,
+                Stroke = "#000000", StrokeWidth = 20,
+                Filled = false, Stroked = true, X = 100, Y = 100,
+            });
+            ribbonLayer.Frames.Add(ribbonKey);
+            ribbon.Timeline.Layers.Add(ribbonLayer);
+            var ribbonBitmap = Exporter.RenderFrame(ribbon, 0, 1, false);
+            var ribbonEncoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            ribbonEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(ribbonBitmap));
+            using (var ribbonFile = File.Create(Path.Combine(root, "ribbon.png"))) ribbonEncoder.Save(ribbonFile);
+            ((ShapeElement)ribbonKey.Elements[0]).Smooth = true;
+            var ribbonSmoothBitmap = Exporter.RenderFrame(ribbon, 0, 1, false);
+            var ribbonSmoothEncoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            ribbonSmoothEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(ribbonSmoothBitmap));
+            using (var ribbonSmoothFile = File.Create(Path.Combine(root, "ribbon-smooth.png"))) ribbonSmoothEncoder.Save(ribbonSmoothFile);
+            ((ShapeElement)ribbonKey.Elements[0]).Smooth = false;
+            byte[] ribbonPixels = new byte[ribbonBitmap.PixelWidth * ribbonBitmap.PixelHeight * 4];
+            ribbonBitmap.CopyPixels(ribbonPixels, ribbonBitmap.PixelWidth * 4, 0);
+            byte[] RibbonAt(int x, int y)
+            {
+                int i = (y * ribbonBitmap.PixelWidth + x) * 4;
+                return new[] { ribbonPixels[i], ribbonPixels[i + 1], ribbonPixels[i + 2], ribbonPixels[i + 3] };
+            }
+            var cross = RibbonAt(100, 100);
+            Check("Лента: самопересечение залито", cross[0] < 40 && cross[1] < 40 && cross[2] < 40,
+                "B=" + cross[0] + " G=" + cross[1] + " R=" + cross[2]);
+            var cap = RibbonAt(60, 52);
+            Check("Лента: круглый торец", cap[0] < 60 && cap[1] < 60 && cap[2] < 60,
+                "B=" + cap[0] + " G=" + cap[1] + " R=" + cap[2]);
 
             // наложение кадров «луковой кожи» не должно падать
             int onionFrames = 0;

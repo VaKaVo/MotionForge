@@ -226,6 +226,55 @@ public static class Geo
         return result;
     }
 
+    /// <summary>
+    /// Плотная выборка сглаженной (Catmull-Rom) ломаной вместе с профилем толщины.
+    /// Нужна для «ленты» переменной толщины: без неё штрих выглядит гранёным.
+    /// </summary>
+    public static void SmoothPolyline(IList<Vec> points, IList<double> widths, int samples,
+        List<Vec> outPoints, List<double> outWidths)
+    {
+        if (points == null || widths == null || outPoints == null || outWidths == null) return;
+        int n = Math.Min(points.Count, widths.Count);
+        if (n < 2) return;
+        samples = Math.Max(2, Math.Min(24, samples));
+
+        for (int i = 0; i < n - 1; i++)
+        {
+            Vec p0 = points[Math.Max(i - 1, 0)];
+            Vec p1 = points[i];
+            Vec p2 = points[i + 1];
+            Vec p3 = points[Math.Min(i + 2, n - 1)];
+            double w0 = widths[Math.Max(i - 1, 0)];
+            double w1 = widths[i];
+            double w2 = widths[i + 1];
+            double w3 = widths[Math.Min(i + 2, n - 1)];
+            for (int s = 0; s < samples; s++)
+            {
+                double t = (double)s / samples;
+                outPoints.Add(CatmullRom(p0, p1, p2, p3, t));
+                outWidths.Add(CatmullRom(w0, w1, w2, w3, t));
+            }
+        }
+        outPoints.Add(points[n - 1]);
+        outWidths.Add(widths[n - 1]);
+    }
+
+    private static Vec CatmullRom(Vec p0, Vec p1, Vec p2, Vec p3, double t)
+    {
+        double x = CatmullRom(p0.X, p1.X, p2.X, p3.X, t);
+        double y = CatmullRom(p0.Y, p1.Y, p2.Y, p3.Y, t);
+        return new Vec(x, y);
+    }
+
+    private static double CatmullRom(double p0, double p1, double p2, double p3, double t)
+    {
+        double t2 = t * t, t3 = t2 * t;
+        return 0.5 * (2 * p1
+                      + (-p0 + p2) * t
+                      + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
+                      + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+    }
+
     /// <summary>Упрощение линии (алгоритм Дугласа-Пекера) — чтобы росчерк не весил мегабайты.</summary>
     public static List<Vec> Simplify(IList<Vec> pts, double tolerance)
     {

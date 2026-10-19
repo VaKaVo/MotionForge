@@ -160,7 +160,7 @@ public partial class MainWindow : Window, IAppShell
 
         _store.Opts.StrokeWidth = settings.StrokeWidth;
         _store.Opts.BrushSize = settings.BrushSize;
-        _store.Opts.Smooth = settings.SmoothStrokes;
+        _store.Opts.FreehandSmooth = settings.SmoothStrokes;
 
         _store.OnionOn = settings.OnionOn;
         _store.OnionBefore = settings.OnionBefore;
@@ -883,29 +883,7 @@ public partial class MainWindow : Window, IAppShell
         try
         {
             byte[] data = File.ReadAllBytes(dialog.FileName);
-            var probe = new BitmapImage();
-            probe.BeginInit();
-            probe.CacheOption = BitmapCacheOption.OnLoad;
-            probe.StreamSource = new MemoryStream(data);
-            probe.EndInit();
-            probe.Freeze();
-
-            double stageWidth = _store.Project.Stage.Width;
-            double stageHeight = _store.Project.Stage.Height;
-            double scale = Math.Min(1, Math.Min(stageWidth * 0.82 / Math.Max(1, probe.PixelWidth),
-                                                stageHeight * 0.82 / Math.Max(1, probe.PixelHeight)));
-            var element = new ImageElement
-            {
-                Source = Convert.ToBase64String(data),
-                FileName = Path.GetFileName(dialog.FileName),
-                PixelWidth = probe.PixelWidth,
-                PixelHeight = probe.PixelHeight,
-                Name = Path.GetFileNameWithoutExtension(dialog.FileName),
-                ScaleX = scale,
-                ScaleY = scale,
-                X = stageWidth / 2 - probe.PixelWidth * scale / 2,
-                Y = stageHeight / 2 - probe.PixelHeight * scale / 2,
-            };
+            var element = BuildImageElement(data, Path.GetFileName(dialog.FileName), Path.GetFileNameWithoutExtension(dialog.FileName));
             _store.AddElement(element, "Импорт изображения");
             Store.Report("Изображение добавлено: " + element.FileName);
         }
@@ -914,6 +892,70 @@ public partial class MainWindow : Window, IAppShell
             MessageBox.Show(this, "Не удалось прочитать изображение:\n" + ex.Message, "MotionForge",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    /// <summary>Вставка картинки из буфера обмена (Ctrl+V): скриншот или файл изображения.</summary>
+    public bool PasteImage(byte[] data, string fileName)
+    {
+        try
+        {
+            string name = string.IsNullOrWhiteSpace(fileName) ? "Изображение из буфера" : Path.GetFileNameWithoutExtension(fileName);
+            var element = BuildImageElement(data, string.IsNullOrWhiteSpace(fileName) ? "clipboard.png" : fileName, name);
+
+            // Не кладём новую картинку ровно поверх уже существующей — сдвигаем каскадом.
+            Keyframe keyframe = _store.EnsureKeyframeForEdit();
+            double x = element.X, y = element.Y;
+            for (int step = 0; step < 12; step++)
+            {
+                bool taken = false;
+                foreach (Element other in keyframe.Elements)
+                {
+                    if (Math.Abs(other.X - x) < 1 && Math.Abs(other.Y - y) < 1) { taken = true; break; }
+                }
+                if (!taken) break;
+                x += 24;
+                y += 24;
+            }
+            element.X = x;
+            element.Y = y;
+
+            _store.AddElement(element, "Вставка изображения");
+            Store.Report("Изображение вставлено: " + element.Name);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Store.Report("Не удалось вставить изображение: " + ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary>Создаёт элемент изображения из байтов, вписывая его в сцену по центру.</summary>
+    private ImageElement BuildImageElement(byte[] data, string fileName, string name)
+    {
+        var probe = new BitmapImage();
+        probe.BeginInit();
+        probe.CacheOption = BitmapCacheOption.OnLoad;
+        probe.StreamSource = new MemoryStream(data);
+        probe.EndInit();
+        probe.Freeze();
+
+        double stageWidth = _store.Project.Stage.Width;
+        double stageHeight = _store.Project.Stage.Height;
+        double scale = Math.Min(1, Math.Min(stageWidth * 0.82 / Math.Max(1, probe.PixelWidth),
+                                            stageHeight * 0.82 / Math.Max(1, probe.PixelHeight)));
+        return new ImageElement
+        {
+            Source = Convert.ToBase64String(data),
+            FileName = fileName,
+            PixelWidth = probe.PixelWidth,
+            PixelHeight = probe.PixelHeight,
+            Name = string.IsNullOrWhiteSpace(name) ? "Изображение" : name,
+            ScaleX = scale,
+            ScaleY = scale,
+            X = stageWidth / 2 - probe.PixelWidth * scale / 2,
+            Y = stageHeight / 2 - probe.PixelHeight * scale / 2,
+        };
     }
 
     public void ShowExportDialog()

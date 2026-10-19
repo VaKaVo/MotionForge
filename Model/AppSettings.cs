@@ -29,7 +29,11 @@ public class AppSettings
     /* --- рисование --- */
     public double StrokeWidth = 1;
     public double BrushSize = 16;
-    public bool SmoothStrokes = false;        // сглаживание линий по умолчанию
+    public bool SmoothStrokes = true;         // сглаживание линий по умолчанию
+
+    /* --- служебное --- */
+    /// <summary>Версия формата файла настроек: нужна для разовых миграций (0 — файл до 1.0.1).</summary>
+    public int SettingsVersion = 0;
 
     /* --- планшет --- */
     public bool TabletEnabled = true;         // обрабатывать перо отдельно от мыши
@@ -61,7 +65,7 @@ public class AppSettings
             }
         }
         catch { /* повреждённый файл настроек не должен мешать запуску */ }
-        return new AppSettings();
+        return new AppSettings().Normalized();
     }
 
     public void Save()
@@ -77,6 +81,12 @@ public class AppSettings
     /// <summary>Приводит значения к допустимым (на случай ручной правки файла).</summary>
     public AppSettings Normalized()
     {
+        // До 1.0.1 сглаживание штрихов было выключено — включаем его всем один раз.
+        if (SettingsVersion < 1)
+        {
+            SmoothStrokes = true;
+            SettingsVersion = 1;
+        }
         if (string.IsNullOrWhiteSpace(Language)) Language = "ru";
         GridStep = Math.Max(2, Math.Min(400, GridStep));
         OnionBefore = Math.Max(0, Math.Min(5, OnionBefore));
