@@ -19,18 +19,18 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Сборка (Release)
-        run: dotnet build MotionForge/MotionForge.csproj -c Release --nologo
+        run: dotnet build MotionForge.csproj -c Release --nologo
 
-      - name: Самопроверка (62 проверки)
+      - name: Самопроверка (103 проверки)
         shell: pwsh
         run: |
-          $exe = "MotionForge/bin/Release/net10.0-windows/MotionForge.exe"
+          $exe = "bin/Release/net10.0-windows/MotionForge.exe"
           $p = Start-Process -FilePath $exe -ArgumentList "--selftest" -PassThru -Wait
           Get-Content "$env:TEMP/motionforge-selftest.txt"
           if ($p.ExitCode -ne 0) { throw "Самопроверка не пройдена (код $($p.ExitCode))" }
 
       - name: Публикация сборки
-        run: dotnet publish MotionForge/MotionForge.csproj -c Release -r win-x64 --self-contained false -o publish --nologo
+        run: dotnet publish MotionForge.csproj -c Release -r win-x64 --self-contained false -o publish --nologo
 
       - name: Выгрузка артефакта
         uses: actions/upload-artifact@v4

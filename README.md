@@ -116,7 +116,7 @@
 Заготовку со всеми строками интерфейса можно выгрузить командой:
 
 ```powershell
-dotnet run -c Release --project MotionForge -- --lang-template
+dotnet run -c Release -- --lang-template
 ```
 
 Готовый набор: `ru` (встроен) и `en` (591 строка) — целиком; `be`, `uk`, `de`, `fr`, `es`,
@@ -153,27 +153,27 @@ dotnet run -c Release --project MotionForge -- --lang-template
 ## Сборка и запуск
 
 ```powershell
-git clone https://github.com/<ваш-логин>/MotionForge.git
+git clone https://github.com/VaKaVo/MotionForge.git
 cd MotionForge
 
 # сборка и запуск из исходников
-dotnet run -c Release --project MotionForge
+dotnet run -c Release
 
 # либо сборка с последующим запуском exe
 dotnet build -c Release
-.\MotionForge\bin\Release\net10.0-windows\MotionForge.exe
+.\bin\Release\net10.0-windows\MotionForge.exe
 ```
 
 Готовая автономная папка для распространения:
 
 ```powershell
-dotnet publish MotionForge -c Release -r win-x64 --self-contained false -o publish
+dotnet publish -c Release -r win-x64 --self-contained false -o publish
 ```
 
 ## Самопроверка
 
 ```powershell
-dotnet run -c Release --project MotionForge -- --selftest
+dotnet run -c Release -- --selftest
 ```
 
 Отчёт сохраняется в `%TEMP%\motionforge-selftest.txt`, код возврата `0` — все проверки пройдены.
