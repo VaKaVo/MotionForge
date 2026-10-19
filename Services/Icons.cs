@@ -56,6 +56,8 @@ public static class Icons
         ["group"] = "M4 4 H10 V10 H4 Z M14 4 H20 V10 H14 Z M4 14 H10 V20 H4 Z M14 14 H20 V20 H14 Z",
         ["align"] = "M4 4 V20 M7 8 H16 M7 16 H20",
         ["magnet"] = "M6 4 V12 A6 6 0 0 0 18 12 V4 H14 V12 A2 2 0 0 1 10 12 V4 Z",
+        ["search"] = "M10 4 A6 6 0 1 1 9.9 4 Z M14.4 14.4 L20 20",
+        ["document"] = "M6 3 H14 L19 8 V21 H6 Z M14 3 V8 H19",
     };
 
     public static string PathData(string id)

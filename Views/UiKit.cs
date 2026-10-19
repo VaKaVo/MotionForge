@@ -389,6 +389,18 @@ public static class UiKit
         return combo;
     }
 
+    /// <summary>Выбирает в комбобоксе пункт с заданным значением (без вызова onCommit).</summary>
+    public static void SetCombo(ComboBox combo, string value)
+    {
+        if (combo == null) return;
+        foreach (object entry in combo.Items)
+            if (entry is ComboBoxItem item && item.Tag is string tag && tag == value)
+            {
+                combo.SelectedItem = item;
+                return;
+            }
+    }
+
     public static Button SmallButton(string text, string tooltip, Action onClick)
     {
         text = L10n.T(text);

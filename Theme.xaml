@@ -414,7 +414,7 @@
             <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
                    IsOpen="{TemplateBinding IsDropDownOpen}" PopupAnimation="None">
               <Border Background="{StaticResource Panel}" BorderBrush="{StaticResource Line2}" BorderThickness="1"
-                      MinWidth="{TemplateBinding ActualWidth}" MaxHeight="260">
+                      MinWidth="{TemplateBinding ActualWidth}" MaxHeight="{TemplateBinding MaxDropDownHeight}">
                 <ScrollViewer>
                   <ItemsPresenter />
                 </ScrollViewer>

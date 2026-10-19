@@ -752,132 +752,473 @@ public class AboutWindow : DialogBase
 /*  Настройки                                                             */
 /* ===================================================================== */
 
-/// <summary>Единое окно настроек: язык, сцена, луковая кожа, рисование, планшет, автосохранение.</summary>
+/// <summary>Окно «Правка → Настройки…»: разделы и поиск слева, содержимое справа,
+/// кнопки ОК / Отмена / Применить — как в «Параметрах» Windows.</summary>
 public class SettingsDialog : DialogBase
 {
+    private sealed class Section
+    {
+        public string Title;
+        public string About;
+        public Action<StackPanel> Fill;
+        public Action<AppSettings> Reset;
+        public Func<string> Words;
+    }
+
+    private readonly List<Section> _sections = new List<Section>();
+    private readonly StackPanel _nav = new StackPanel();
+    private readonly StackPanel _content = new StackPanel();
+    private readonly TextBox _search = new TextBox
+    {
+        Padding = new Thickness(31, 5, 9, 5),
+        VerticalContentAlignment = VerticalAlignment.Center,
+    };
+    private readonly TextBlock _hint = new TextBlock
+    {
+        Foreground = (Brush)Application.Current.Resources["Accent2"],
+        VerticalAlignment = VerticalAlignment.Center,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        FontSize = 11,
+        Margin = new Thickness(0, 0, 12, 0),
+    };
+
     private AppSettings _draft;
-    private readonly Action<AppSettings> _preview;
+    private int _current;
 
     public AppSettings Result { get; private set; }
 
-    public SettingsDialog(AppSettings current, Action<AppSettings> preview = null)
-        : base("Настройки", 560)
+    /// <summary>«Применить»: оболочка сразу переносит настройки в сессию (язык — только по «ОК»).</summary>
+    public Action<AppSettings> OnApply { get; set; }
+
+    public SettingsDialog(AppSettings current) : base("Настройки", 760)
     {
         _draft = (current ?? new AppSettings()).Clone();
-        _preview = preview;
-        Build();
+        Width = 760;
+        Height = 620;
+        SizeToContent = SizeToContent.Manual;
+        BuildSections();
+        BuildShell();
+        RebuildNav();
+        Loaded += (s, e) => _search.Focus();   // курсор сразу в поиске, как в «Параметрах»
     }
 
-    private void Build()
+    /* ----------------------------- каркас ----------------------------- */
+
+    private void BuildShell()
     {
-        Body.Children.Clear();
-        Body.Children.Add(Heading("Настройки"));
-        Body.Children.Add(Paragraph("Настройки хранятся в файле %APPDATA%\\MotionForge\\settings.json " +
-                                     "и применяются сразу после нажатия «Готово»."));
-
-        /* ---------------------------- общие ---------------------------- */
-        AddSection("Общие");
-        AddRow("Язык интерфейса", UiKit.Combo(
-            L10n.Languages().Select(l => (l.Code, l.Name)).ToList(),
-            _draft.Language,
-            value => { _draft.Language = value; if (_preview != null) { _preview(_draft); Build(); } },
-            210));
-        AddCheck("Подсказки в строке состояния", _draft.ShowStatusHints, v => _draft.ShowStatusHints = v);
-        AddCheck("Спрашивать при выходе с несохранёнными изменениями", _draft.ConfirmOnExit, v => _draft.ConfirmOnExit = v);
-
-        /* ---------------------------- сцена ---------------------------- */
-        AddSection("Сцена");
-        AddCheck("Показывать сетку", _draft.GridOn, v => _draft.GridOn = v);
-        AddRow("Шаг сетки", UiKit.Number(_draft.GridStep, v => _draft.GridStep = v, 5, 78, 2, 400));
-        AddCheck("Привязывать новые фигуры к сетке", _draft.SnapToGrid, v => _draft.SnapToGrid = v);
-        AddCheck("Показывать только контуры объектов", _draft.OutlineAll, v => _draft.OutlineAll = v);
-
-        /* ------------------------ луковая кожа ------------------------- */
-        AddSection("Луковая кожа");
-        AddCheck("Показывать соседние кадры", _draft.OnionOn, v => _draft.OnionOn = v);
-        AddRow("Кадров до и после",
-            UiKit.Number(_draft.OnionBefore, v => _draft.OnionBefore = (int)Math.Round(v), 1, 60, 0, 5),
-            UiKit.Number(_draft.OnionAfter, v => _draft.OnionAfter = (int)Math.Round(v), 1, 60, 0, 5));
-
-        /* --------------------------- рисование ------------------------- */
-        AddSection("Рисование");
-        AddRow("Толщина линии", UiKit.Number(_draft.StrokeWidth, v => _draft.StrokeWidth = v, 0.5, 78, 0.1, 200));
-        AddRow("Размер кисти", UiKit.Number(_draft.BrushSize, v => _draft.BrushSize = v, 1, 78, 1, 400));
-        AddCheck("Сглаживать линии карандаша и кисти", _draft.SmoothStrokes, v => _draft.SmoothStrokes = v);
-
-        /* ---------------------------- планшет -------------------------- */
-        AddSection("Графический планшет");
-        AddCheck("Обрабатывать перо отдельно от мыши", _draft.TabletEnabled, v => _draft.TabletEnabled = v);
-        AddCheck("Учитывать силу нажатия пера (толщина линии)", _draft.TabletPressure, v => _draft.TabletPressure = v);
-        AddCheck("Игнорировать касания пальцем (защита от ладони)", _draft.TabletIgnoreTouch, v => _draft.TabletIgnoreTouch = v);
-        Body.Children.Add(new TextBlock
+        var header = new Border
         {
-            Text = TabletInfo(),
-            TextWrapping = TextWrapping.Wrap,
+            Background = (Brush)Application.Current.Resources["Bg2"],
+            Padding = new Thickness(20, 13, 20, 12),
+            Child = new TextBlock
+            {
+                Text = L10n.T("Настройки"),
+                FontSize = 16.5,
+                FontWeight = FontWeights.SemiBold,
+            },
+        };
+        DockPanel.SetDock(header, Dock.Top);
+
+        /* поиск по настройкам */
+        var search = new Grid
+        {
+            Margin = new Thickness(18, 12, 18, 6),
+        };
+        search.Children.Add(_search);
+
+        var glass = Icons.CreatePath("search", (Brush)Application.Current.Resources["TxtDim"], 1.3);
+        glass.Width = 14;
+        glass.Height = 14;
+        glass.HorizontalAlignment = HorizontalAlignment.Left;
+        glass.VerticalAlignment = VerticalAlignment.Center;
+        glass.Margin = new Thickness(11, 0, 0, 0);
+        glass.IsHitTestVisible = false;
+        search.Children.Add(glass);
+
+        var placeholder = new TextBlock
+        {
+            Text = L10n.T("Поиск настроек…"),
             Foreground = (Brush)Application.Current.Resources["TxtDim"],
-            Margin = new Thickness(0, 6, 0, 2),
-        });
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(32, 0, 0, 0),
+            IsHitTestVisible = false,
+        };
+        search.Children.Add(placeholder);
+        _search.TextChanged += (s, e) =>
+        {
+            placeholder.Visibility = _search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            RebuildNav();
+        };
+        DockPanel.SetDock(search, Dock.Top);
 
-        /* ------------------------- автосохранение ---------------------- */
-        AddSection("Автосохранение");
-        AddRow("Интервал в минутах (0 — выключено)",
-            UiKit.Number(_draft.AutosaveMinutes, v => _draft.AutosaveMinutes = (int)Math.Round(v), 1, 60, 0, 60));
+        /* список разделов и содержимое */
+        var split = new Grid { Margin = new Thickness(18, 4, 18, 8) };
+        split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(198) });
+        split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(13) });
+        split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-        AddButtons(
-            Primary("Готово", () =>
-            {
-                Result = _draft.Normalized();
-                DialogResult = true;
-            }),
-            Secondary("Отмена"),
-            Secondary("По умолчанию", () =>
-            {
-                _draft = new AppSettings { Language = _draft.Language };
-                Build();
-            }));
+        var navScroll = new ScrollViewer
+        {
+            Content = _nav,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Padding = new Thickness(0, 0, 6, 0),
+        };
+        Grid.SetColumn(navScroll, 0);
+        split.Children.Add(navScroll);
+
+        var divider = new Border
+        {
+            Width = 1,
+            Background = (Brush)Application.Current.Resources["Line2"],
+            Opacity = 0.55,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(6, 2, 6, 2),
+        };
+        Grid.SetColumn(divider, 1);
+        split.Children.Add(divider);
+
+        var contentScroll = new ScrollViewer
+        {
+            Content = _content,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Padding = new Thickness(15, 2, 4, 2),
+        };
+        Grid.SetColumn(contentScroll, 2);
+        split.Children.Add(contentScroll);
+
+        /* кнопки */
+        var bar = new Grid { Margin = new Thickness(18, 6, 18, 14) };
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        bar.Children.Add(_hint);
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        var ok = Primary("ОК", () => { Result = _draft.Normalized(); DialogResult = true; });
+        var cancel = Secondary("Отмена");
+        var apply = Secondary("Применить", ApplyDraft);
+        foreach (Button button in new[] { ok, cancel, apply })
+        {
+            button.MinWidth = 92;
+            button.Margin = new Thickness(8, 0, 0, 0);
+            button.Padding = new Thickness(14, 5, 14, 5);
+            buttons.Children.Add(button);
+        }
+        Grid.SetColumn(buttons, 1);
+        bar.Children.Add(buttons);
+        DockPanel.SetDock(bar, Dock.Bottom);
+
+        var root = new DockPanel { LastChildFill = true };
+        root.Children.Add(header);
+        root.Children.Add(search);
+        root.Children.Add(bar);
+        root.Children.Add(split);
+        Content = root;
     }
 
-    private void AddSection(string title)
+    /* ---------------------------- разделы ----------------------------- */
+
+    private void BuildSections()
     {
-        Body.Children.Add(new TextBlock
+        _sections.Add(new Section
         {
-            Text = L10n.T(title).ToUpperInvariant(),
-            FontSize = 10.5,
-            FontWeight = FontWeights.Bold,
-            Foreground = (Brush)Application.Current.Resources["Accent2"],
-            Margin = new Thickness(0, 14, 0, 2),
+            Title = "Общие",
+            About = "Язык интерфейса, подсказки в строке состояния и поведение при закрытии.",
+            Words = () => Join("Язык интерфейса", "Подсказки в строке состояния",
+                               "Спрашивать при выходе с несохранёнными изменениями", "Настройки"),
+            Fill = host =>
+            {
+                var language = UiKit.Combo(
+                    L10n.Languages().Select(l => (l.Code, l.Name)).ToList(),
+                    _draft.Language,
+                    value => { _draft.Language = value; UpdateHint(); },
+                    240);
+                language.MaxDropDownHeight = 380;      // весь список языков без прокрутки
+                Row(host, "Язык интерфейса", language);
+                Check(host, "Подсказки в строке состояния", _draft.ShowStatusHints, v => _draft.ShowStatusHints = v);
+                Check(host, "Спрашивать при выходе с несохранёнными изменениями", _draft.ConfirmOnExit, v => _draft.ConfirmOnExit = v);
+                Note(host, "Файл настроек: %APPDATA%\\MotionForge\\settings.json");
+            },
+            Reset = s =>
+            {
+                s.Language = "ru";
+                s.ShowStatusHints = true;
+                s.ConfirmOnExit = true;
+            },
         });
-        Body.Children.Add(new Border
+
+        _sections.Add(new Section
         {
-            Height = 1,
-            Background = (Brush)Application.Current.Resources["Line"],
-            Margin = new Thickness(0, 0, 0, 4),
+            Title = "Сцена",
+            About = "Сетка на рабочей области и то, как показывать объекты.",
+            Words = () => Join("Показывать сетку", "Шаг сетки", "Привязывать новые фигуры к сетке",
+                               "Показывать только контуры объектов", "Сцена"),
+            Fill = host =>
+            {
+                Check(host, "Показывать сетку", _draft.GridOn, v => _draft.GridOn = v);
+                Row(host, "Шаг сетки", UiKit.Number(_draft.GridStep, v => _draft.GridStep = v, 5, 78, 2, 400));
+                Check(host, "Привязывать новые фигуры к сетке", _draft.SnapToGrid, v => _draft.SnapToGrid = v);
+                Check(host, "Показывать только контуры объектов", _draft.OutlineAll, v => _draft.OutlineAll = v);
+            },
+            Reset = s =>
+            {
+                s.GridOn = false;
+                s.GridStep = 40;
+                s.SnapToGrid = false;
+                s.OutlineAll = false;
+            },
+        });
+
+        _sections.Add(new Section
+        {
+            Title = "Луковая кожа",
+            About = "Полупрозрачные кадры до и после текущего: так проще рисовать движение.",
+            Words = () => Join("Показывать соседние кадры", "Кадров до", "Кадров после", "Луковая кожа"),
+            Fill = host =>
+            {
+                Check(host, "Показывать соседние кадры", _draft.OnionOn, v => _draft.OnionOn = v);
+                Row(host, "Кадров до", UiKit.Number(_draft.OnionBefore, v => _draft.OnionBefore = (int)Math.Round(v), 1, 60, 0, 5));
+                Row(host, "Кадров после", UiKit.Number(_draft.OnionAfter, v => _draft.OnionAfter = (int)Math.Round(v), 1, 60, 0, 5));
+            },
+            Reset = s =>
+            {
+                s.OnionOn = false;
+                s.OnionBefore = 1;
+                s.OnionAfter = 1;
+            },
+        });
+
+        _sections.Add(new Section
+        {
+            Title = "Рисование",
+            About = "Толщина линий и размер кисти по умолчанию.",
+            Words = () => Join("Толщина линии", "Размер кисти", "Сглаживать линии карандаша и кисти", "Рисование"),
+            Fill = host =>
+            {
+                Row(host, "Толщина линии", UiKit.Number(_draft.StrokeWidth, v => _draft.StrokeWidth = v, 0.5, 78, 0.1, 200));
+                Row(host, "Размер кисти", UiKit.Number(_draft.BrushSize, v => _draft.BrushSize = v, 1, 78, 1, 400));
+                Check(host, "Сглаживать линии карандаша и кисти", _draft.SmoothStrokes, v => _draft.SmoothStrokes = v);
+            },
+            Reset = s =>
+            {
+                s.StrokeWidth = 1;
+                s.BrushSize = 16;
+                s.SmoothStrokes = false;
+            },
+        });
+
+        _sections.Add(new Section
+        {
+            Title = "Графический планшет",
+            About = "Перо обрабатывается отдельно от мыши и может менять толщину от силы нажатия.",
+            Words = () => Join("Обрабатывать перо отдельно от мыши", "Учитывать силу нажатия пера",
+                               "Игнорировать касания пальцем", "Графический планшет", "Перо", "Стилус"),
+            Fill = host =>
+            {
+                Check(host, "Обрабатывать перо отдельно от мыши", _draft.TabletEnabled, v => _draft.TabletEnabled = v);
+                Check(host, "Учитывать силу нажатия пера (толщина линии)", _draft.TabletPressure, v => _draft.TabletPressure = v);
+                Check(host, "Игнорировать касания пальцем (защита от ладони)", _draft.TabletIgnoreTouch, v => _draft.TabletIgnoreTouch = v);
+                Note(host, TabletInfo());
+            },
+            Reset = s =>
+            {
+                s.TabletEnabled = true;
+                s.TabletPressure = true;
+                s.TabletIgnoreTouch = true;
+            },
+        });
+
+        _sections.Add(new Section
+        {
+            Title = "Автосохранение",
+            About = "Резервная копия проекта на случай сбоя.",
+            Words = () => Join("Интервал в минутах", "Автосохранение", "Резервная копия"),
+            Fill = host =>
+            {
+                Row(host, "Интервал в минутах", UiKit.Number(_draft.AutosaveMinutes, v => _draft.AutosaveMinutes = (int)Math.Round(v), 1, 68, 0, 60));
+                Note(host, "0 — автосохранение выключено. Копия лежит в %APPDATA%\\MotionForge\\autosave.mforge.");
+            },
+            Reset = s => s.AutosaveMinutes = 1,
         });
     }
 
-    private void AddCheck(string label, bool value, Action<bool> onChange)
+    /* ---------------------------- навигация --------------------------- */
+
+    private void RebuildNav()
+    {
+        _nav.Children.Clear();
+        string query = _search.Text.Trim();
+        var matches = new List<int>();
+        for (int i = 0; i < _sections.Count; i++)
+            if (query.Length == 0 || Matches(i, query)) matches.Add(i);
+
+        if (matches.Count == 0)
+        {
+            _nav.Children.Add(new TextBlock
+            {
+                Text = L10n.T("Ничего не найдено"),
+                Foreground = (Brush)Application.Current.Resources["TxtDim"],
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(10, 10, 10, 0),
+            });
+            _content.Children.Clear();
+            return;
+        }
+
+        if (!matches.Contains(_current)) _current = matches[0];
+        foreach (int index in matches) _nav.Children.Add(NavItem(index));
+        FillContent();
+    }
+
+    private bool Matches(int index, string query)
+    {
+        Section section = _sections[index];
+        var haystack = new List<string> { section.Title, L10n.T(section.Title) };
+        if (!string.IsNullOrEmpty(section.About)) haystack.Add(L10n.T(section.About));
+        if (section.Words != null) haystack.Add(section.Words());
+        return haystack.Any(text => !string.IsNullOrEmpty(text) &&
+                                    text.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0);
+    }
+
+    private Border NavItem(int index)
+    {
+        bool selected = index == _current;
+        var item = new Border
+        {
+            Padding = new Thickness(10, 6, 8, 6),
+            Margin = new Thickness(0, 1, 0, 1),
+            CornerRadius = new CornerRadius(3),
+            Background = selected ? (Brush)Application.Current.Resources["Panel2"] : Brushes.Transparent,
+            Cursor = Cursors.Hand,
+            Child = new TextBlock
+            {
+                Text = L10n.T(_sections[index].Title),
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (Brush)Application.Current.Resources[selected ? "Accent2" : "Txt"],
+            },
+        };
+        if (!selected)
+        {
+            item.MouseEnter += (s, e) => item.Background = (Brush)Application.Current.Resources["Panel"];
+            item.MouseLeave += (s, e) => item.Background = Brushes.Transparent;
+        }
+        item.MouseLeftButtonUp += (s, e) =>
+        {
+            if (_current == index) return;
+            _current = index;
+            RebuildNav();
+        };
+        return item;
+    }
+
+    private void FillContent()
+    {
+        _content.Children.Clear();
+        if (_current < 0 || _current >= _sections.Count) return;
+        Section section = _sections[_current];
+
+        _content.Children.Add(new TextBlock
+        {
+            Text = L10n.T(section.Title),
+            FontSize = 14.5,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 3),
+        });
+        if (!string.IsNullOrEmpty(section.About))
+            _content.Children.Add(new TextBlock
+            {
+                Text = L10n.T(section.About),
+                Foreground = (Brush)Application.Current.Resources["TxtDim"],
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 12),
+            });
+
+        var host = new StackPanel();
+        section.Fill(host);
+        _content.Children.Add(host);
+
+        var reset = new Button
+        {
+            Content = L10n.T("Сбросить раздел"),
+            Style = (Style)Application.Current.Resources["Btn"],
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(12, 4, 12, 4),
+            Margin = new Thickness(0, 18, 0, 4),
+        };
+        reset.Click += (s, e) =>
+        {
+            section.Reset(_draft);
+            FillContent();
+            UpdateHint();
+        };
+        _content.Children.Add(reset);
+    }
+
+    /* ----------------------------- строки ----------------------------- */
+
+    private static void Row(StackPanel host, string label, params UIElement[] fields)
+    {
+        var row = new Grid { Margin = new Thickness(0, 5, 0, 0) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var caption = new TextBlock
+        {
+            Text = L10n.T(label),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)Application.Current.Resources["Txt"],
+            Margin = new Thickness(0, 0, 10, 0),
+        };
+        Grid.SetColumn(caption, 0);
+        row.Children.Add(caption);
+
+        var values = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        foreach (UIElement field in fields)
+        {
+            if (field is FrameworkElement fe) fe.Margin = new Thickness(0, 0, 6, 0);
+            values.Children.Add(field);
+        }
+        Grid.SetColumn(values, 1);
+        row.Children.Add(values);
+        host.Children.Add(row);
+    }
+
+    private static void Check(StackPanel host, string label, bool value, Action<bool> onChange)
     {
         var check = UiKit.Check(label, value, onChange);
         check.Margin = new Thickness(0, 5, 0, 0);
-        Body.Children.Add(check);
+        host.Children.Add(check);
     }
 
-    private void AddRow(string label, params UIElement[] fields)
+    private static void Note(StackPanel host, string text)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-        row.Children.Add(new TextBlock
+        host.Children.Add(new TextBlock
         {
-            Text = L10n.T(label),
-            Width = 250,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = (Brush)Application.Current.Resources["Txt"],
+            Text = L10n.T(text),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)Application.Current.Resources["TxtDim"],
+            FontSize = 11,
+            Margin = new Thickness(0, 10, 0, 0),
         });
-        foreach (var field in fields)
-        {
-            if (field is FrameworkElement fe) fe.Margin = new Thickness(0, 0, 6, 0);
-            row.Children.Add(field);
-        }
-        Body.Children.Add(row);
+    }
+
+    private static string Join(params string[] parts) => string.Join(" ", parts);
+
+    /* ----------------------------- кнопки ----------------------------- */
+
+    private void ApplyDraft()
+    {
+        Result = _draft.Normalized();
+        OnApply?.Invoke(Result);
+        UpdateHint(L10n.T("Настройки применены"));
+    }
+
+    private void UpdateHint(string text = null)
+    {
+        bool pending = !string.Equals(_draft.Language, L10n.Current, StringComparison.OrdinalIgnoreCase);
+        _hint.Text = pending ? L10n.T("Язык применится после нажатия «ОК»") : (text ?? "");
     }
 
     /// <summary>Какие перьевые устройства видит система (подсказка в разделе «Планшет»).</summary>
@@ -901,5 +1242,373 @@ public class SettingsDialog : DialogBase
         {
             return L10n.T("Сведения об устройствах ввода недоступны.");
         }
+    }
+}
+
+/* ===================================================================== */
+/*  Новый документ                                                        */
+/* ===================================================================== */
+
+/// <summary>Параметры, выбранные в окне «Новый документ».</summary>
+public class NewDocumentOptions
+{
+    public string Name = "Без названия";
+    public double Width = 960;
+    public double Height = 600;
+    public int Fps = 24;
+    public string Background = "#FFFFFF";
+}
+
+/// <summary>Окно создания документа: готовые размеры слева, параметры справа.</summary>
+public class NewDocumentDialog : DialogBase
+{
+    private sealed class Preset
+    {
+        public string Category;
+        public string Title;
+        public double Width;
+        public double Height;
+        public int Fps;
+        public string Background = "#FFFFFF";
+    }
+
+    private static readonly Preset[] Presets =
+    {
+        new Preset { Category = "Кино и видео", Title = "HD 1080p", Width = 1920, Height = 1080, Fps = 24 },
+        new Preset { Category = "Кино и видео", Title = "HD 720p", Width = 1280, Height = 720, Fps = 24 },
+        new Preset { Category = "Кино и видео", Title = "Презентация 4:3", Width = 1024, Height = 768, Fps = 24 },
+        new Preset { Category = "Кино и видео", Title = "Сцена по умолчанию", Width = 960, Height = 600, Fps = 24 },
+
+        new Preset { Category = "Web", Title = "Баннер", Width = 728, Height = 90, Fps = 12 },
+        new Preset { Category = "Web", Title = "Обложка", Width = 1200, Height = 630, Fps = 30 },
+        new Preset { Category = "Web", Title = "Постер", Width = 1080, Height = 1350, Fps = 24 },
+
+        new Preset { Category = "Мобильные", Title = "Вертикаль", Width = 1080, Height = 1920, Fps = 30 },
+        new Preset { Category = "Мобильные", Title = "История", Width = 1080, Height = 1920, Fps = 15 },
+        new Preset { Category = "Мобильные", Title = "iPhone", Width = 390, Height = 844, Fps = 30 },
+
+        new Preset { Category = "Квадрат", Title = "Квадрат 1080", Width = 1080, Height = 1080, Fps = 30 },
+        new Preset { Category = "Квадрат", Title = "Квадрат 720", Width = 720, Height = 720, Fps = 24 },
+        new Preset { Category = "Квадрат", Title = "Мини", Width = 512, Height = 512, Fps = 12 },
+    };
+
+    private static readonly string[] Categories = { "Кино и видео", "Web", "Мобильные", "Квадрат" };
+
+    private readonly NewDocumentOptions _draft = new NewDocumentOptions();
+    private readonly WrapPanel _cards = new WrapPanel();
+    private readonly StackPanel _tabs = new StackPanel { Orientation = Orientation.Horizontal };
+    private readonly StackPanel _form = new StackPanel();
+
+    private Preset _selected;
+    private string _category = "Кино и видео";
+    private TextBox _nameBox;
+    private TextBox _widthBox;
+    private TextBox _heightBox;
+    private ComboBox _fpsBox;
+    private ColorButton _color;
+
+    public NewDocumentOptions Result { get; private set; }
+
+    public NewDocumentDialog() : base("Новый документ", 880)
+    {
+        Width = 880;
+        Height = 600;
+        SizeToContent = SizeToContent.Manual;
+
+        _selected = Presets[3];                       // сцена по умолчанию — 960 × 600
+        _draft.Width = _selected.Width;
+        _draft.Height = _selected.Height;
+        _draft.Fps = _selected.Fps;
+        _draft.Background = _selected.Background;
+
+        BuildShell();
+        RebuildTabs();
+        RebuildCards();
+        UiKit.SetCombo(_fpsBox, _draft.Fps.ToString());
+        _nameBox.Focus();
+        _nameBox.SelectAll();
+    }
+
+    /* ----------------------------- каркас ----------------------------- */
+
+    private void BuildShell()
+    {
+        var head = new StackPanel();
+        head.Children.Add(new TextBlock
+        {
+            Text = L10n.T("Новый документ"),
+            FontSize = 16.5,
+            FontWeight = FontWeights.SemiBold,
+        });
+        head.Children.Add(new TextBlock
+        {
+            Text = L10n.T("Выберите готовый размер или задайте свои параметры."),
+            Foreground = (Brush)Application.Current.Resources["TxtDim"],
+            Margin = new Thickness(0, 3, 0, 0),
+        });
+        var header = new Border
+        {
+            Background = (Brush)Application.Current.Resources["Bg2"],
+            Padding = new Thickness(20, 12, 20, 11),
+            Child = head,
+        };
+        DockPanel.SetDock(header, Dock.Top);
+
+        /* пресеты */
+        var left = new DockPanel { LastChildFill = true, Margin = new Thickness(18, 10, 12, 8) };
+        var tabsHost = new Border
+        {
+            BorderBrush = (Brush)Application.Current.Resources["Line"],
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Margin = new Thickness(0, 0, 0, 9),
+            Child = _tabs,
+        };
+        DockPanel.SetDock(tabsHost, Dock.Top);
+        left.Children.Add(tabsHost);
+        left.Children.Add(new ScrollViewer
+        {
+            Content = _cards,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        });
+
+        /* параметры */
+        BuildForm();
+        var right = new Border
+        {
+            Background = (Brush)Application.Current.Resources["Bg2"],
+            BorderBrush = (Brush)Application.Current.Resources["Line"],
+            BorderThickness = new Thickness(1, 0, 0, 0),
+            Padding = new Thickness(16, 14, 16, 12),
+            Child = _form,
+        };
+
+        var main = new Grid();
+        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(296) });
+        Grid.SetColumn(left, 0);
+        main.Children.Add(left);
+        Grid.SetColumn(right, 1);
+        main.Children.Add(right);
+
+        /* кнопки */
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var close = Secondary("Закрыть");
+        var create = Primary("Создать", CreateProject);
+        foreach (Button button in new[] { close, create })
+        {
+            button.MinWidth = 104;
+            button.Padding = new Thickness(14, 5, 14, 5);
+            button.Margin = new Thickness(8, 0, 0, 0);
+            buttons.Children.Add(button);
+        }
+        var bar = new Grid { Margin = new Thickness(18, 6, 18, 14) };
+        bar.Children.Add(buttons);
+        DockPanel.SetDock(bar, Dock.Bottom);
+
+        var root = new DockPanel { LastChildFill = true };
+        root.Children.Add(header);
+        root.Children.Add(bar);
+        root.Children.Add(main);
+        Content = root;
+    }
+
+    private void BuildForm()
+    {
+        _form.Children.Add(new TextBlock
+        {
+            Text = L10n.T("Параметры"),
+            FontSize = 12.5,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 10),
+        });
+
+        _form.Children.Add(FieldLabel("Имя"));
+        _nameBox = UiKit.Text(_draft.Name, v => _draft.Name = v);
+        _form.Children.Add(_nameBox);
+
+        _form.Children.Add(FieldLabel("Размер, пиксели"));
+        _widthBox = UiKit.Number(_draft.Width, v => _draft.Width = Math.Max(16, Math.Round(v)), 10, 108, 16, 8000);
+        _heightBox = UiKit.Number(_draft.Height, v => _draft.Height = Math.Max(16, Math.Round(v)), 10, 108, 16, 8000);
+        _form.Children.Add(UiKit.Row(_widthBox, new TextBlock
+        {
+            Text = "×",
+            Margin = new Thickness(6, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = (Brush)Application.Current.Resources["TxtDim"],
+        }, _heightBox));
+
+        _form.Children.Add(FieldLabel("Частота кадров, к/с"));
+        _fpsBox = UiKit.Combo(new[]
+        {
+            ("12", "12"), ("15", "15"), ("24", "24"), ("25", "25"), ("30", "30"), ("60", "60"),
+        }, _draft.Fps.ToString(), v =>
+        {
+            if (int.TryParse(v, out int fps)) _draft.Fps = fps;
+        }, 108);
+        _form.Children.Add(_fpsBox);
+
+        _form.Children.Add(FieldLabel("Фон сцены"));
+        _color = new ColorButton(_draft.Background, 64);
+        _color.ColorChanged = hex => _draft.Background = hex;
+        _form.Children.Add(UiKit.Row(_color, new TextBlock
+        {
+            Text = L10n.T("Прозрачный фон задаётся при экспорте"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = (Brush)Application.Current.Resources["TxtDim"],
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 170,
+            Margin = new Thickness(8, 0, 0, 0),
+        }));
+
+        _form.Children.Add(new TextBlock
+        {
+            Text = L10n.T("Размер, частоту кадров и фон можно изменить позже в свойствах сцены."),
+            Foreground = (Brush)Application.Current.Resources["TxtDim"],
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 11,
+            Margin = new Thickness(0, 22, 0, 0),
+        });
+    }
+
+    /* --------------------------- пресеты ------------------------------ */
+
+    private void RebuildTabs()
+    {
+        _tabs.Children.Clear();
+        foreach (string category in Categories) _tabs.Children.Add(Tab(category));
+    }
+
+    private Border Tab(string category)
+    {
+        bool active = category == _category;
+        var item = new Border
+        {
+            Padding = new Thickness(9, 7, 9, 6),
+            BorderThickness = new Thickness(0, 0, 0, 2),
+            BorderBrush = active ? (Brush)Application.Current.Resources["Accent2"] : Brushes.Transparent,
+            Background = Brushes.Transparent,
+            Cursor = Cursors.Hand,
+            Child = new TextBlock
+            {
+                Text = L10n.T(category),
+                Foreground = (Brush)Application.Current.Resources[active ? "Accent2" : "TxtDim"],
+                FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal,
+            },
+        };
+        if (!active)
+        {
+            item.MouseEnter += (s, e) => item.Background = (Brush)Application.Current.Resources["Panel"];
+            item.MouseLeave += (s, e) => item.Background = Brushes.Transparent;
+        }
+        item.MouseLeftButtonUp += (s, e) =>
+        {
+            if (_category == category) return;
+            _category = category;
+            if (_selected == null || _selected.Category != category)
+            {
+                _selected = Presets.First(p => p.Category == category);
+                ApplyPreset(_selected);
+            }
+            RebuildTabs();
+            RebuildCards();
+        };
+        return item;
+    }
+
+    private void RebuildCards()
+    {
+        _cards.Children.Clear();
+        foreach (Preset preset in Presets)
+            if (preset.Category == _category) _cards.Children.Add(Card(preset));
+    }
+
+    private Border Card(Preset preset)
+    {
+        bool selected = ReferenceEquals(preset, _selected);
+
+        /* миниатюра в реальных пропорциях */
+        double scale = Math.Min(30.0 / preset.Width, 30.0 / preset.Height);
+        var thumb = new Grid { Width = 38, Height = 38, VerticalAlignment = VerticalAlignment.Center };
+        thumb.Children.Add(new Border
+        {
+            Width = Math.Max(5, preset.Width * scale),
+            Height = Math.Max(5, preset.Height * scale),
+            Background = UiKit.Brush(preset.Background),
+            BorderBrush = (Brush)Application.Current.Resources["Line2"],
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(1),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+
+        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(9, 0, 0, 0) };
+        info.Children.Add(new TextBlock { Text = L10n.T(preset.Title) });
+        info.Children.Add(new TextBlock
+        {
+            Text = preset.Width.ToString("0") + " × " + preset.Height.ToString("0") + " · " +
+                   preset.Fps + " " + L10n.T("к/с"),
+            Foreground = (Brush)Application.Current.Resources["TxtDim"],
+            FontSize = 10.5,
+            Margin = new Thickness(0, 2, 0, 0),
+        });
+
+        var content = new StackPanel { Orientation = Orientation.Horizontal };
+        content.Children.Add(thumb);
+        content.Children.Add(info);
+
+        var card = new Border
+        {
+            Width = 246,
+            Height = 62,
+            Padding = new Thickness(9, 6, 8, 6),
+            Margin = new Thickness(0, 0, 6, 6),
+            CornerRadius = new CornerRadius(3),
+            BorderThickness = new Thickness(1),
+            BorderBrush = (Brush)Application.Current.Resources[selected ? "Accent2" : "Line"],
+            Background = (Brush)Application.Current.Resources[selected ? "Panel2" : "Panel"],
+            Cursor = Cursors.Hand,
+            Child = content,
+        };
+        if (!selected)
+        {
+            card.MouseEnter += (s, e) => card.BorderBrush = (Brush)Application.Current.Resources["Line2"];
+            card.MouseLeave += (s, e) => card.BorderBrush = (Brush)Application.Current.Resources["Line"];
+        }
+        card.MouseLeftButtonUp += (s, e) =>
+        {
+            _selected = preset;
+            ApplyPreset(preset);
+            RebuildCards();
+        };
+        return card;
+    }
+
+    private void ApplyPreset(Preset preset)
+    {
+        _draft.Width = preset.Width;
+        _draft.Height = preset.Height;
+        _draft.Fps = preset.Fps;
+        _draft.Background = preset.Background;
+
+        UiKit.SetNumber(_widthBox, preset.Width);
+        UiKit.SetNumber(_heightBox, preset.Height);
+        UiKit.SetCombo(_fpsBox, preset.Fps.ToString());
+        _color.Color = preset.Background;
+    }
+
+    /* ---------------------------- создание ---------------------------- */
+
+    private void CreateProject()
+    {
+        Result = new NewDocumentOptions
+        {
+            Name = string.IsNullOrWhiteSpace(_draft.Name) ? L10n.T("Без названия") : _draft.Name.Trim(),
+            Width = Math.Max(16, Math.Round(_draft.Width)),
+            Height = Math.Max(16, Math.Round(_draft.Height)),
+            Fps = Math.Max(1, Math.Min(120, _draft.Fps)),
+            Background = _draft.Background,
+        };
+        DialogResult = true;
     }
 }

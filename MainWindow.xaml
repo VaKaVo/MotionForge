@@ -154,7 +154,7 @@
           <RowDefinition Height="5" />
           <RowDefinition x:Name="LibraryRow" Height="240" MinHeight="86" />
           <RowDefinition Height="5" />
-          <RowDefinition x:Name="SwatchesRow" Height="178" MinHeight="56" />
+          <RowDefinition x:Name="SwatchesRow" Height="150" MinHeight="56" />
         </Grid.RowDefinitions>
 
         <Grid x:Name="PropertiesDock" Grid.Row="0">

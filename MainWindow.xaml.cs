@@ -140,9 +140,13 @@ public partial class MainWindow : Window, IAppShell
                 Close();
             }), DispatcherPriority.ApplicationIdle);
 
-        if (Environment.GetCommandLineArgs().Length > 1 &&
-            string.Equals(Environment.GetCommandLineArgs()[1], "--prefs", StringComparison.OrdinalIgnoreCase))
+        string[] args = Environment.GetCommandLineArgs();
+        string flag = args.Length > 1 ? args[1] : "";
+
+        if (string.Equals(flag, "--prefs", StringComparison.OrdinalIgnoreCase))
             Dispatcher.BeginInvoke(new Action(ShowSettings), DispatcherPriority.ApplicationIdle);
+        else if (string.Equals(flag, "--newdoc", StringComparison.OrdinalIgnoreCase))
+            Dispatcher.BeginInvoke(new Action(NewProject), DispatcherPriority.ApplicationIdle);
     }
 
     /* ================================================================== */
@@ -194,40 +198,42 @@ public partial class MainWindow : Window, IAppShell
     /// <summary>Окно «Правка → Настройки…» (Ctrl+,).</summary>
     public void ShowSettings()
     {
-        var dialog = new SettingsDialog(AppSettings.Current, draft =>
+        var dialog = new SettingsDialog(AppSettings.Current)
         {
-            // Живой предпросмотр языка: интерфейс успевает перестроиться до нажатия «Готово».
-            if (!string.Equals(draft.Language, L10n.Current, StringComparison.OrdinalIgnoreCase))
-            {
-                L10n.SetLanguage(draft.Language);
-                RebuildUi();
-            }
-        }) { Owner = this };
+            Owner = this,
+            // «Применить»: настройки вступают в силу сразу, язык — после закрытия окна,
+            // чтобы не перестраивать интерфейс под открытым модальным диалогом.
+            OnApply = draft => ApplySettingsDraft(draft, false),
+        };
 
         bool? result = dialog.ShowDialog();
-        if (result == true && dialog.Result != null)
-        {
-            AppSettings.Current = dialog.Result;
-            AppSettings.Current.Save();
-            if (!string.Equals(AppSettings.Current.Language, L10n.Current, StringComparison.OrdinalIgnoreCase))
-            {
-                L10n.SetLanguage(AppSettings.Current.Language);
-                RebuildUi();
-            }
-            ApplySettings(AppSettings.Current);
-            RefreshAll();
-            Store.Report(L10n.T("Настройки сохранены"));
-        }
-        else
-        {
-            // Отмена — возвращаем язык, который был до предпросмотра.
-            if (!string.Equals(AppSettings.Current.Language, L10n.Current, StringComparison.OrdinalIgnoreCase))
-            {
-                L10n.SetLanguage(AppSettings.Current.Language);
-                RebuildUi();
-            }
-        }
         Stage.Focus();
+
+        if (dialog.Result == null) return;                      // «Отмена» без «Применить»
+
+        ApplySettingsDraft(dialog.Result, result == true);      // язык — только по «ОК»
+        Store.Report(L10n.T(result == true ? "Настройки сохранены" : "Настройки применены"));
+    }
+
+    /// <summary>Переносит черновик настроек в сессию. Язык меняется только по «ОК»:
+    /// перестраивать интерфейс под открытым модальным диалогом нельзя.</summary>
+    private void ApplySettingsDraft(AppSettings draft, bool closeWithOk)
+    {
+        AppSettings.Current = draft.Clone();
+        if (!closeWithOk) AppSettings.Current.Language = L10n.Current;   // язык ещё не применён
+        AppSettings.Current.Save();
+
+        bool languageChanged = closeWithOk &&
+            !string.Equals(AppSettings.Current.Language, L10n.Current, StringComparison.OrdinalIgnoreCase);
+
+        ApplySettings(AppSettings.Current);
+        if (languageChanged)
+        {
+            L10n.SetLanguage(AppSettings.Current.Language);
+            RebuildUi();
+            UpdateTitle();
+        }
+        else RefreshAll();
     }
 
     private void StatusZoom_Update()
@@ -755,11 +761,25 @@ public partial class MainWindow : Window, IAppShell
     public void NewProject()
     {
         if (!ConfirmDiscard("Создать новый проект?")) return;
+
+        var dialog = new NewDocumentDialog { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result == null) return;
+
         _playTimer.Stop();
-        var project = new Project { Name = "Без названия" };
+        var project = new Project
+        {
+            Name = dialog.Result.Name,
+            Stage = new StageInfo
+            {
+                Width = dialog.Result.Width,
+                Height = dialog.Result.Height,
+                Fps = dialog.Result.Fps,
+                Background = dialog.Result.Background,
+            },
+        };
         AttachStore(new Store(project));
         FitStage();
-        Store.Report("Новый проект создан");
+        Store.Report(L10n.T("Новый документ создан"));
     }
 
     public void OpenProject()

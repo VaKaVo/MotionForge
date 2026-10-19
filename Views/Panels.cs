@@ -391,14 +391,13 @@ public class PropertiesPanel : StackPanel
         bg.ColorChanged = hex => { stage.Background = hex; StageChanged("Фон сцены"); };
 
         panel.Children.Add(UiKit.PropRow("Фон", 88, bg,
-            UiKit.Label("Частота", 44),
+            UiKit.Label("Кадры/с", 54),
             UiKit.Number(stage.Fps, v =>
             {
                 stage.Fps = (int)Math.Max(1, Math.Min(120, v));
                 Store.Commit("Частота кадров");
                 Store.RaiseAll();
-            }, 1, 46, 1, 120),
-            UiKit.Label("к/с", 18)));
+            }, 1, 46, 1, 120)));
 
         panel.Children.Add(UiKit.PropRow("Длительность", 88, new TextBlock
         {

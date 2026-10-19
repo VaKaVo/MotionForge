@@ -99,7 +99,7 @@ public static class Commands
 
     private static void BuildFile()
     {
-        Add("file.new", "Файл", "Новый проект", "Ctrl+N", s => s.NewProject());
+        Add("file.new", "Файл", "Новый документ…", "Ctrl+N", s => s.NewProject());
         Add("file.open", "Файл", "Открыть…", "Ctrl+O", s => s.OpenProject());
         Add("file.save", "Файл", "Сохранить", "Ctrl+S", s => s.SaveProject(false));
         Add("file.saveAs", "Файл", "Сохранить как…", "Ctrl+Shift+S", s => s.SaveProject(true));
