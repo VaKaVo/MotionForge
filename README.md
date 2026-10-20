@@ -206,6 +206,23 @@ background can be changed later in the Stage panel.
 
 ---
 
+## Why it is small and fast
+
+* **No runtime is bundled.** The release archive is about **0.5 MB**: the program uses the shared
+  .NET 10 Desktop Runtime that other .NET apps on the machine already have, instead of packing a
+  private copy of it (as Electron apps pack a whole browser).
+* **No browser, no Python, no Java.** The interface is WPF — a native, GPU-accelerated part of
+  .NET. There is no Chromium, no web view and not a single NuGet package: only the base
+  assemblies that ship with .NET.
+* **The document is vector data.** A project file stores shapes, keyframes and settings — text,
+  not pixels — so it stays small and opens instantly. Frames are rendered on demand and cached;
+  only the visible frame is drawn.
+* **Export is in-process.** GIF, PNG and sprite sheets are produced by the built-in WPF encoders;
+  the sprite sheet is composed in memory and hashed frame by frame, so duplicate frames are
+  written once.
+* **Startup is short.** There is no scripting engine to boot and no plugin scan blocking the
+  window; the splash screen lasts about a second and can be turned off in the settings.
+
 ## Requirements
 
 * Windows 10 or 11 (x64)
@@ -554,6 +571,22 @@ dotnet run -c Release -- --lang-template
 кадров и фон потом можно поменять в «Свойствах сцены».
 
 ---
+
+## Почему программа маленькая и быстрая
+
+* **Рантайм не входит в архив.** Релиз весит около **0,5 МБ**: программа использует общий
+  .NET 10 Desktop Runtime, который уже есть на компьютере у других .NET-приложений, а не тащит
+  его личную копию (как Electron-приложения тащат целый браузер).
+* **Ни браузера, ни Python, ни Java.** Интерфейс — WPF, нативная и аппаратно ускоренная часть
+  .NET. Внутри нет Chromium, веб-вью и ни одного NuGet-пакета: только базовые сборки .NET.
+* **Документ — векторные данные.** Файл проекта хранит фигуры, ключевые кадры и настройки, то
+  есть текст, а не пиксели, поэтому он остаётся маленьким и открывается мгновенно. Кадры
+  рисуются по требованию и кешируются, отрисовывается только видимый кадр.
+* **Экспорт идёт в том же процессе.** GIF, PNG и спрайт-листы создаются встроенными
+  кодировщиками WPF; лист собирается в памяти и хешируется кадр за кадром, поэтому одинаковые
+  кадры записываются один раз.
+* **Быстрый запуск.** Нет движка скриптов, который нужно поднимать, и нет сканирования плагинов,
+  задерживающего окно; заставка показывается около секунды и отключается в настройках.
 
 ## Требования
 
