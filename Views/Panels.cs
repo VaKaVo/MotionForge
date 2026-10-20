@@ -301,15 +301,25 @@ public class PropertiesPanel : StackPanel
                 panel.Children.Add(UiKit.PropRow("Цвет", 74, StrokeButton()));
                 panel.Children.Add(UiKit.PropRow("Толщина", 74,
                     UiKit.Number(opts.StrokeWidth, v => PaintOps.SetStrokeWidth(Store, v), 0.5, 56, 0, 200)));
-                panel.Children.Add(UiKit.Row(
-                    UiKit.Check("Сглаживание", opts.FreehandSmooth, v => opts.FreehandSmooth = v)));
+                panel.Children.Add(UiKit.PropRow("Кисть", 74, BrushPresetCombo(opts)));
+                panel.Children.Add(UiKit.PropRow("Сглаживание", 74,
+                    UiKit.Number(opts.Smoothing, v => opts.Smoothing = Math.Max(0, Math.Min(100, v)), 0, 56, 0, 100),
+                    UiKit.Check("Вкл.", opts.FreehandSmooth, v => opts.FreehandSmooth = v)));
                 break;
 
             case "brush":
                 panel.Children.Add(UiKit.PropRow("Цвет", 74, FillButton()));
                 panel.Children.Add(UiKit.PropRow("Размер", 74, UiKit.Number(opts.BrushSize, v => opts.BrushSize = v, 1, 56, 1, 200)));
-                panel.Children.Add(UiKit.Row(
-                    UiKit.Check("Сглаживание", opts.FreehandSmooth, v => opts.FreehandSmooth = v)));
+                panel.Children.Add(UiKit.PropRow("Кисть", 74, BrushPresetCombo(opts)));
+                panel.Children.Add(UiKit.PropRow("Сглаживание", 74,
+                    UiKit.Number(opts.Smoothing, v => opts.Smoothing = Math.Max(0, Math.Min(100, v)), 0, 56, 0, 100),
+                    UiKit.Check("Вкл.", opts.FreehandSmooth, v => opts.FreehandSmooth = v)));
+                break;
+
+            case "eraser":
+                panel.Children.Add(UiKit.PropRow("Размер", 74,
+                    UiKit.Number(opts.EraserSize, v => opts.EraserSize = Math.Max(4, Math.Min(400, v)), 1, 56, 4, 400)));
+                panel.Children.Add(UiKit.Hint("Ластик режет штрихи на части. Alt + щелчок удаляет объект целиком."));
                 break;
 
             case "text":
@@ -344,6 +354,21 @@ public class PropertiesPanel : StackPanel
         var button = new ColorButton(Store.Opts.Fill);
         button.ColorChanged = hex => PaintOps.SetFill(Store, hex);
         return button;
+    }
+
+    /// <summary>Список стилей кисти для карандаша и кисти.</summary>
+    private ComboBox BrushPresetCombo(ToolOptions opts)
+    {
+        var list = new List<(string, string)>
+        {
+            ("pencil", L10n.T("Карандаш")),
+            ("brush", L10n.T("Кисть")),
+            ("marker", L10n.T("Маркер")),
+            ("calligraphy", L10n.T("Каллиграфия")),
+            ("airbrush", L10n.T("Аэрограф")),
+        };
+        return UiKit.Combo(list, string.IsNullOrEmpty(opts.BrushPreset) ? "brush" : opts.BrushPreset,
+            v => opts.BrushPreset = v, 150);
     }
 
     private ColorButton StrokeButton()

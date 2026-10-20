@@ -10,7 +10,7 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>MotionForge contributors</Authors>
     <Product>MotionForge</Product>
     <Description>Открытая десктопная студия 2D-анимации: таймлайн, слои, символы, твины, рисование, экспорт в GIF и спрайт-листы.</Description>
@@ -23,11 +23,28 @@
 
   <ItemGroup>
     <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\logo.png" />
   </ItemGroup>
 
   <!-- Языковые файлы интерфейса: копируются рядом с exe, новый язык = новый json -->
   <ItemGroup>
     <Content Include="Localization\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- Примеры плагинов и руководство: кладутся рядом с exe, чтобы плагины было видно сразу -->
+  <ItemGroup>
+    <Content Include="Plugins\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="PLUGINS.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="README.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="LICENSE">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

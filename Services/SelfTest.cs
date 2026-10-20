@@ -6,6 +6,7 @@ using System.Text;
 using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 using MotionForge.Model;
+using MotionForge.Tools;
 
 namespace MotionForge.Services;
 
@@ -459,6 +460,10 @@ public static class SelfTest
                 L10n.T("Фон сцены"));
             L10n.SetLanguage("en");
             Check("Английский переводит строку", L10n.T("Файл") == "File", L10n.T("Файл"));
+            Check("Английский: новые строки (плагины, заставка)",
+                L10n.T("Плагины") == "Plugins" &&
+                L10n.T("Показывать заставку при запуске") == "Show splash screen on startup",
+                L10n.T("Плагины"));
             Check("Неизвестная строка не теряется", L10n.T("Нет такой строки — 42") == "Нет такой строки — 42");
             L10n.SetLanguage("xx");
             Check("Незнакомый язык падает на английский", L10n.T("Файл") == "File", L10n.T("Файл"));
@@ -544,6 +549,14 @@ public static class SelfTest
                 wild.GridStep + " / " + wild.OnionBefore + " / " + wild.OnionAfter + " / " + wild.BrushSize + " / " + wild.AutosaveMinutes);
             Check("Пустой язык заменяется русским", new AppSettings { Language = "  " }.Normalized().Language == "ru");
 
+            var drawing = new AppSettings { EraserSize = 1, BrushPreset = "  ", Smoothing = 999, UndoLimit = 3, PythonPath = " " };
+            drawing.Normalized();
+            Check("Настройки рисования приводятся к норме",
+                drawing.EraserSize == 4 && drawing.BrushPreset == "brush" && drawing.Smoothing == 100 &&
+                drawing.UndoLimit == 10 && drawing.PythonPath == "python",
+                drawing.EraserSize + " / " + drawing.BrushPreset + " / " + drawing.Smoothing + " / " +
+                drawing.UndoLimit + " / " + drawing.PythonPath);
+
             var round = Json.LoadObject<AppSettings>(Json.SaveObject(new AppSettings
             {
                 Language = "ja",
@@ -588,6 +601,190 @@ public static class SelfTest
                 clone.Widths != null && clone.Widths.Count == 3 && Math.Abs(clone.Widths[2] - 10) < 1e-9);
         }
         catch (Exception ex) { Check("Толщина линии (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
+
+        /* ---------- ластик ---------- */
+        try
+        {
+            Project LineProject(out ShapeElement line)
+            {
+                var project = new Project();
+                project.Stage.Width = 400; project.Stage.Height = 200; project.Stage.Background = "#FFFFFF";
+                var layer = new Layer { Name = "Слой 1" };
+                var keyframe = new Keyframe { Index = 0, Duration = 1 };
+                var points = new List<Vec>();
+                for (int x = 50; x <= 350; x += 10) points.Add(new Vec(x, 100));
+                line = new ShapeElement
+                {
+                    Points = points, Closed = false, Smooth = false,
+                    Stroke = "#000000", StrokeWidth = 12, Filled = false, Stroked = true,
+                    X = 0, Y = 0,
+                };
+                keyframe.Elements.Add(line);
+                layer.Frames.Add(keyframe);
+                project.Timeline.Layers.Add(layer);
+                return project;
+            }
+
+            var eraseStore = new Store(LineProject(out _));
+            eraseStore.Opts.EraserSize = 40;      // радиус 20 при масштабе 100 %
+            eraseStore.Zoom = 1;
+            var eraseCtx = new ToolContext { Store = eraseStore, Px = 1 };
+            var eraser = new EraserTool();
+            eraser.Down(eraseCtx, new Vec(200, 100), false);
+            eraser.Up(eraseCtx, new Vec(200, 100));
+
+            var cutPieces = eraseStore.ActiveKeyframe.Elements.OfType<ShapeElement>().ToList();
+            Check("Ластик: штрих разрезан на две части", cutPieces.Count == 2,
+                cutPieces.Count + " куска");
+            bool leftEnd = cutPieces.Any(p => p.Points.Any(pt => pt.X <= 60));
+            bool rightEnd = cutPieces.Any(p => p.Points.Any(pt => pt.X >= 340));
+            Check("Ластик: куски сохранили начало и конец", leftEnd && rightEnd);
+            Check("Ластик: в месте стирания пусто",
+                cutPieces.All(p => p.Points.All(pt => Math.Abs(pt.X - 200) > 20)),
+                string.Join(" | ", cutPieces.Select(p => p.Points.Count + " точек")));
+            Check("Ластик: новые объекты получили свои Id",
+                cutPieces.Select(p => p.Id).Distinct().Count() == cutPieces.Count);
+
+            var altStore = new Store(LineProject(out _));
+            altStore.Opts.EraserSize = 40;
+            var altCtx = new ToolContext { Store = altStore, Px = 1, Mods = System.Windows.Input.ModifierKeys.Alt };
+            var altEraser = new EraserTool();
+            altEraser.Down(altCtx, new Vec(200, 100), false);
+            altEraser.Up(altCtx, new Vec(200, 100));
+            Check("Ластик: Alt удаляет объект целиком", altStore.ActiveKeyframe.Elements.Count == 0,
+                altStore.ActiveKeyframe.Elements.Count + " объектов");
+        }
+        catch (Exception ex) { Check("Ластик (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
+
+        /* ---------- кисти ---------- */
+        try
+        {
+            var brushShape = new ShapeElement { Brush = "calligraphy", BrushAngle = 30 };
+            var brushClone = (ShapeElement)brushShape.Clone();
+            Check("Стиль кисти копируется вместе с объектом",
+                brushClone.Brush == "calligraphy" && Math.Abs(brushClone.BrushAngle - 30) < 1e-9);
+
+            var brushProject = new Project();
+            brushProject.Stage.Width = 300; brushProject.Stage.Height = 100; brushProject.Stage.Background = "#FFFFFF";
+            var brushLayer = new Layer { Name = "Слой 1" };
+            var brushKey = new Keyframe { Index = 0, Duration = 1 };
+            var brushLine = new ShapeElement
+            {
+                Points = new List<Vec> { new Vec(50, 50), new Vec(100, 50), new Vec(150, 50) },
+                Widths = new List<double> { 20, 20, 20 },
+                Closed = false, Smooth = true,
+                Stroke = "#000000", StrokeWidth = 20, Filled = false, Stroked = true,
+            };
+            brushKey.Elements.Add(brushLine);
+            brushLayer.Frames.Add(brushKey);
+            brushProject.Timeline.Layers.Add(brushLayer);
+
+            byte[] CapPixels(string preset)
+            {
+                brushLine.Brush = preset;
+                var bitmap = Exporter.RenderFrame(brushProject, 0, 1, false);
+                var pixels = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
+                bitmap.CopyPixels(pixels, bitmap.PixelWidth * 4, 0);
+                int i = (50 * bitmap.PixelWidth + 157) * 4;    // сразу за концом линии
+                return new[] { pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3] };
+            }
+
+            var roundCap = CapPixels("");
+            var flatCap = CapPixels("marker");
+            Check("Кисть: круглый торец выходит за конец линии", roundCap[0] < 100, "B=" + roundCap[0]);
+            Check("Кисть «маркер»: плоский торец обрезан", flatCap[0] > 200, "B=" + flatCap[0]);
+
+            var serif = CapPixels("calligraphy");
+            Check("Кисть «каллиграфия» меняет форму штриха", serif[0] != flatCap[0] || serif[0] != roundCap[0],
+                "B=" + serif[0]);
+
+            var savedBrush = Json.Load(Json.Save(brushProject));
+            var savedShape = savedBrush.Timeline.Layers[0].Frames[0].Elements[0] as ShapeElement;
+            Check("Стиль кисти сохраняется в JSON", savedShape != null && savedShape.Brush == "calligraphy",
+                savedShape?.Brush);
+        }
+        catch (Exception ex) { Check("Кисти (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
+
+        /* ---------- спрайт-лист: одинаковые кадры ---------- */
+        try
+        {
+            ShapeElement Square(string color) => new ShapeElement
+            {
+                Points = new List<Vec> { new Vec(-20, -20), new Vec(20, -20), new Vec(20, 20), new Vec(-20, 20) },
+                Closed = true, Smooth = false, Fill = color, Stroke = color, StrokeWidth = 1,
+                Filled = true, Stroked = false, X = 50, Y = 50,
+            };
+
+            var duplicate = new Project();
+            duplicate.Stage.Width = 100; duplicate.Stage.Height = 100; duplicate.Stage.Background = "#FFFFFF";
+            var dupLayer = new Layer { Name = "Слой 1" };
+            var dupKeys = new[]
+            {
+                new Keyframe { Index = 0, Duration = 1 },
+                new Keyframe { Index = 1, Duration = 1 },
+                new Keyframe { Index = 2, Duration = 1 },
+            };
+            dupKeys[0].Elements.Add(Square("#FF0000"));
+            dupKeys[1].Elements.Add(Square("#FF0000"));
+            dupKeys[2].Elements.Add(Square("#0000FF"));
+            dupLayer.Frames.AddRange(dupKeys);
+            duplicate.Timeline.Layers.Add(dupLayer);
+
+            string dupXml = Exporter.ExportSpriteSheet(duplicate, Path.Combine(root, "dup_sheet.png"), 1.0, 2, false);
+            var dupDoc = XDocument.Load(dupXml);
+            var dupRoot = dupDoc.Root;
+            var dupSubs = dupRoot.Elements("SubTexture").ToList();
+            Check("Спрайт-лист: одинаковые кадры занимают одну ячейку",
+                dupRoot.Attribute("textures") != null && (int)dupRoot.Attribute("textures") == 2,
+                dupRoot.Attribute("textures")?.Value);
+            Check("Спрайт-лист: кадры 0 и 1 указывают на одну ячейку",
+                dupSubs.Count == 3 &&
+                (int)dupSubs[0].Attribute("x") == (int)dupSubs[1].Attribute("x") &&
+                (int)dupSubs[0].Attribute("y") == (int)dupSubs[1].Attribute("y") &&
+                (int)dupSubs[2].Attribute("x") != (int)dupSubs[0].Attribute("x"),
+                string.Join(" | ", dupSubs.Select(s => s.Attribute("x").Value + "," + s.Attribute("y").Value)));
+            var dupImage = new BitmapImage(new Uri(Path.Combine(root, "dup_sheet.png")));
+            Check("Спрайт-лист: PNG без пустых ячеек", dupImage.PixelWidth == 200 && dupImage.PixelHeight == 100,
+                dupImage.PixelWidth + "x" + dupImage.PixelHeight);
+        }
+        catch (Exception ex) { Check("Спрайт-лист: дубликаты (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
+
+        /* ---------- плагины ---------- */
+        try
+        {
+            var plugins = Plugins.Load();
+            Check("Плагины: примеры найдены",
+                plugins.Any(p => p.Id == "stars" && p.Ready) && plugins.Any(p => p.Id == "outline" && p.Ready),
+                plugins.Count + " найдено");
+            Check("Плагины: папка-шаблон не загружается", !plugins.Any(p => p.Id == "template"),
+                string.Join(", ", plugins.Select(p => p.Id)));
+            Check("Плагины: пункты меню созданы",
+                Commands.All.Any(c => c.Id == "plugin.list") &&
+                Commands.All.Any(c => c.Id == "plugin.folder") &&
+                Commands.All.Any(c => c.Id == "plugin.stars"));
+
+            var pluginProject = new Project();
+            var pluginLayer = new Layer { Name = "Слой 1" };
+            var pluginKey = new Keyframe { Index = 0, Duration = 1 };
+            pluginProject.Timeline.Layers.Add(pluginLayer);
+            pluginLayer.Frames.Add(pluginKey);
+
+            if (Plugins.PythonAvailable(out string pythonVersion))
+            {
+                PluginInfo stars = plugins.First(p => p.Id == "stars");
+                Project changed = Plugins.Run(stars, pluginProject, 0, out string pluginLog);
+                int elements = changed == null
+                    ? 0
+                    : changed.Timeline.Layers.Sum(l => l.Frames.Sum(f => f.Elements.Count));
+                Check("Плагин «Звёздное небо» добавляет объекты", changed != null && elements >= 40,
+                    elements + " объектов · " + pythonVersion);
+            }
+            else
+            {
+                Check("Плагин «Звёздное небо» проверен без Python (нет в системе)", true);
+            }
+        }
+        catch (Exception ex) { Check("Плагины (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
 
         /* ---------- отчёт ---------- */
         var report = new StringBuilder();

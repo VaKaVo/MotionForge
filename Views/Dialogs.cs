@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -1112,6 +1112,7 @@ public class SettingsDialog : DialogBase
                 Check(host, "Подсказки в строке состояния", _draft.ShowStatusHints, v => _draft.ShowStatusHints = v);
                 Check(host, "Спрашивать при выходе с несохранёнными изменениями", _draft.ConfirmOnExit, v => _draft.ConfirmOnExit = v);
                 Check(host, "Проверять обновления при запуске", _draft.CheckUpdates, v => _draft.CheckUpdates = v);
+                Check(host, "Показывать заставку при запуске", _draft.ShowSplash, v => _draft.ShowSplash = v);
                 Note(host, "Файл настроек: %APPDATA%\\MotionForge\\settings.json");
             },
             Reset = s =>
@@ -1120,6 +1121,7 @@ public class SettingsDialog : DialogBase
                 s.ShowStatusHints = true;
                 s.ConfirmOnExit = true;
                 s.CheckUpdates = true;
+                s.ShowSplash = true;
             },
         });
 
@@ -1167,18 +1169,39 @@ public class SettingsDialog : DialogBase
         _sections.Add(new Section
         {
             Title = "Рисование",
-            About = "Толщина линий и размер кисти по умолчанию.",
-            Words = () => Join("Толщина линии", "Размер кисти", "Сглаживать линии карандаша и кисти", "Рисование"),
+            About = "Инструменты рисования: толщина линий, кисти, ластик, сглаживание и глубина отмены.",
+            Words = () => Join("Толщина линии", "Размер кисти", "Сглаживать линии карандаша и кисти", "Рисование",
+                               "Стиль кисти", "Размер ластика", "Сглаживание штриха", "Глубина отмены", "Отмена"),
             Fill = host =>
             {
                 Row(host, "Толщина линии", UiKit.Number(_draft.StrokeWidth, v => _draft.StrokeWidth = v, 0.5, 78, 0.1, 200));
                 Row(host, "Размер кисти", UiKit.Number(_draft.BrushSize, v => _draft.BrushSize = v, 1, 78, 1, 400));
+                Row(host, "Стиль кисти", UiKit.Combo(
+                    new List<(string, string)>
+                    {
+                        ("pencil", L10n.T("Карандаш")),
+                        ("brush", L10n.T("Кисть")),
+                        ("marker", L10n.T("Маркер")),
+                        ("calligraphy", L10n.T("Каллиграфия")),
+                        ("airbrush", L10n.T("Аэрограф")),
+                    },
+                    string.IsNullOrEmpty(_draft.BrushPreset) ? "brush" : _draft.BrushPreset,
+                    v => _draft.BrushPreset = v,
+                    200));
+                Row(host, "Размер ластика", UiKit.Number(_draft.EraserSize, v => _draft.EraserSize = v, 1, 78, 4, 400));
+                Row(host, "Сглаживание штриха", UiKit.Number(_draft.Smoothing, v => _draft.Smoothing = v, 1, 78, 0, 100));
+                Row(host, "Глубина отмены", UiKit.Number(_draft.UndoLimit, v => _draft.UndoLimit = (int)Math.Round(v), 1, 78, 10, 500));
                 Check(host, "Сглаживать линии карандаша и кисти", _draft.SmoothStrokes, v => _draft.SmoothStrokes = v);
+                Note(host, "100 шагов отмены требуют больше памяти, но позволяют вернуться дальше назад.");
             },
             Reset = s =>
             {
                 s.StrokeWidth = 1;
                 s.BrushSize = 16;
+                s.BrushPreset = "brush";
+                s.EraserSize = 28;
+                s.Smoothing = 50;
+                s.UndoLimit = 90;
                 s.SmoothStrokes = true;
             },
         });
@@ -1215,6 +1238,40 @@ public class SettingsDialog : DialogBase
                 Note(host, "0 — автосохранение выключено. Копия лежит в %APPDATA%\\MotionForge\\autosave.mforge.");
             },
             Reset = s => s.AutosaveMinutes = 1,
+        });
+
+        _sections.Add(new Section
+        {
+            Title = "Плагины",
+            About = "Плагины расширяют программу: добавляют эффекты, генераторы, инструменты и экспорт. " +
+                    "Каждый плагин — папка в каталоге Plugins рядом с программой.",
+            Words = () => Join("Плагины", "Python", "Команда Python", "Открыть папку плагинов",
+                               "Обновить список плагинов", "Расширения"),
+            Fill = host =>
+            {
+                Row(host, "Команда Python", UiKit.Text(_draft.PythonPath, v => _draft.PythonPath = v, 240));
+                Note(host, "По умолчанию используется команда python из системы. Если Python установлен в другом месте, " +
+                           "укажите полный путь к python.exe.");
+
+                var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+                var openFolder = UiKit.SmallButton("Открыть папку плагинов", "Папка рядом с программой", () => Plugins.OpenFolder());
+                var reload = UiKit.SmallButton("Проверить плагины", "Перечитать список плагинов", () =>
+                {
+                    int count = Commands.LoadPluginCommands();
+                    string info = string.Format(L10n.T("Найдено плагинов: {0}"), count);
+                    if (Plugins.PythonAvailable(out string version)) info += " · " + version;
+                    else info += " · " + L10n.T("Python не найден");
+                    MessageBox.Show(info, "MotionForge", MessageBoxButton.OK, MessageBoxImage.Information);
+                });
+                reload.Margin = new Thickness(8, 0, 0, 0);
+                buttons.Children.Add(openFolder);
+                buttons.Children.Add(reload);
+                host.Children.Add(buttons);
+
+                Note(host, "Подробное руководство и примеры плагинов — в файле PLUGINS.md рядом с программой " +
+                           "(и в репозитории проекта).");
+            },
+            Reset = s => s.PythonPath = "python",
         });
     }
 
@@ -1786,5 +1843,139 @@ public class NewDocumentDialog : DialogBase
             Background = _draft.Background,
         };
         DialogResult = true;
+    }
+}
+
+/* ===================================================================== */
+/*  Плагины                                                              */
+/* ===================================================================== */
+
+/// <summary>Список найденных плагинов, состояние Python и кнопки работы с папкой.</summary>
+public class PluginsWindow : DialogBase
+{
+    private readonly StackPanel _list = new StackPanel();
+    private readonly TextBlock _pythonText;
+
+    public PluginsWindow() : base("Плагины", 600)
+    {
+        Body.Children.Add(Heading("Плагины"));
+        Body.Children.Add(Paragraph(
+            "Плагин — это папка в каталоге Plugins рядом с программой. Внутри неё лежит plugin.json с описанием " +
+            "и скрипт (обычно на Python). Плагин получает файл проекта, изменяет его и возвращает результат обратно."));
+
+        _pythonText = Paragraph("");
+        Body.Children.Add(_pythonText);
+        Body.Children.Add(_list);
+
+        var runButton = Secondary("Открыть папку плагинов", () => Plugins.OpenFolder());
+        var reloadButton = Secondary("Обновить список", Reload);
+        AddButtons(runButton, reloadButton, Primary("Закрыть", () => Close()));
+        Reload();
+    }
+
+    /// <summary>Перечитывает папку плагинов и перестраивает список.</summary>
+    public void Reload()
+    {
+        Plugins.Load();
+        _list.Children.Clear();
+
+        bool hasPython = Plugins.PythonAvailable(out string version);
+        _pythonText.Text = hasPython
+            ? string.Format(L10n.T("Python найден: {0}"), version)
+            : L10n.T("Python не найден. Плагины на Python не смогут запуститься — установите Python 3 " +
+                     "или укажите команду в настройках (раздел «Общие»).");
+
+        if (Plugins.Cache.Count == 0)
+        {
+            _list.Children.Add(Paragraph("Плагинов не найдено. Скопируйте папку плагина в каталог Plugins и нажмите «Обновить список»."));
+            return;
+        }
+
+        foreach (PluginInfo plugin in Plugins.Cache)
+        {
+            var title = new TextBlock
+            {
+                Text = plugin.Title,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13,
+                TextWrapping = TextWrapping.Wrap,
+            };
+            var details = new TextBlock
+            {
+                Text = plugin.Ready
+                    ? string.Format(L10n.T("версия {0}{1} · файл: {2}"),
+                        plugin.Version,
+                        string.IsNullOrEmpty(plugin.Author) ? "" : " · " + plugin.Author,
+                        Path.GetFileName(plugin.Command))
+                    : L10n.T("не загрузился: ") + plugin.Error,
+                Foreground = (Brush)Application.Current.Resources[plugin.Ready ? "TxtDim" : "Err"],
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 11.5,
+            };
+            var card = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+            card.Children.Add(title);
+            if (!string.IsNullOrWhiteSpace(plugin.Description))
+            {
+                card.Children.Add(new TextBlock
+                {
+                    Text = plugin.Description,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 3, 0, 0),
+                    Foreground = (Brush)Application.Current.Resources["Txt"],
+                });
+            }
+            card.Children.Add(details);
+            card.Children.Add(new TextBlock
+            {
+                Text = plugin.Folder,
+                FontSize = 10.5,
+                Foreground = (Brush)Application.Current.Resources["TxtDim"],
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 0, 0),
+            });
+            var frame = new Border
+            {
+                Background = (Brush)Application.Current.Resources["Panel"],
+                BorderBrush = (Brush)Application.Current.Resources["Line"],
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 10, 12, 10),
+                Margin = new Thickness(0, 6, 0, 0),
+                Child = card,
+            };
+            if (!plugin.Ready) frame.BorderBrush = (Brush)Application.Current.Resources["Err"];
+            _list.Children.Add(frame);
+        }
+    }
+}
+
+/// <summary>Окно с отчетом о работе плагина (вывод скрипта, ошибки).</summary>
+public class LogWindow : DialogBase
+{
+    public LogWindow(string title, string text, bool error) : base(title, 640)
+    {
+        Body.Children.Add(Heading(title));
+        if (error)
+            Body.Children.Add(Paragraph("Плагин не смог выполнить работу. Ниже — подробности от программы."));
+
+        var box = new TextBox
+        {
+            Text = string.IsNullOrWhiteSpace(text) ? L10n.T("Готово.") : text,
+            IsReadOnly = true,
+            TextWrapping = TextWrapping.Wrap,
+            AcceptsReturn = true,
+            FontFamily = new FontFamily("Consolas, Cascadia Mono, Segoe UI"),
+            FontSize = 11.5,
+            Background = (Brush)Application.Current.Resources["DarkInset"],
+            Foreground = (Brush)Application.Current.Resources[error ? "Err" : "Txt"],
+            BorderBrush = (Brush)Application.Current.Resources["Line"],
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(10),
+            MinHeight = 120,
+            MaxHeight = 360,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        Body.Children.Add(box);
+        AddButtons(Primary("Закрыть", () => Close()));
     }
 }

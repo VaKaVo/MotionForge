@@ -774,7 +774,10 @@ public class FreehandTool : Tool
         _widths.Clear();
         _baseWidth = BaseWidth(ctx.Store);
         _points.Add(p);
-        _widths.Add(_baseWidth * ctx.PressureScale);
+        // Ширину первой точки узнаём только по следующему пакету пера: многие драйверы
+        // на самом первом событии отдают нажатие 0 (или 1) — из-за этого в начале
+        // штриха появлялась огромная «клякса».
+        _widths.Add(double.NaN);
         Dragging = true;
         ctx.Redraw();
     }
@@ -784,8 +787,10 @@ public class FreehandTool : Tool
         if (!Dragging) return;
         Vec last = _points[_points.Count - 1];
         if (Math.Sqrt(Math.Pow(p.X - last.X, 2) + Math.Pow(p.Y - last.Y, 2)) < 0.8 * ctx.Px) return;
+        double width = _baseWidth * ctx.PressureScale;
+        if (double.IsNaN(_widths[0])) _widths[0] = width;
         _points.Add(p);
-        _widths.Add(_baseWidth * ctx.PressureScale);
+        _widths.Add(width);
         ctx.Redraw();
     }
 
@@ -797,11 +802,13 @@ public class FreehandTool : Tool
         {
             // Одиночный щелчок — точка-«капля» толщиной кисти.
             _points.Add(new Vec(_points[0].X + 0.01, _points[0].Y + 0.01));
-            _widths.Add(_widths[0]);
+            _widths[0] = _baseWidth;
+            _widths.Add(_baseWidth);
         }
+        if (double.IsNaN(_widths[0])) _widths[0] = _baseWidth;
         if (_points.Count < 2) { _points.Clear(); _widths.Clear(); ctx.Redraw(); return; }
 
-        var pts = Geo.Simplify(_points, 0.9 * ctx.Px);
+        var pts = Geo.Simplify(_points, (0.35 + Math.Max(0, Math.Min(100, ctx.Store.Opts.Smoothing)) / 100.0 * 1.3) * ctx.Px);
         if (pts.Count < 2) pts = new List<Vec>(_points);
 
         RectD box = RectD.FromPoints(pts);
@@ -822,6 +829,8 @@ public class FreehandTool : Tool
             Filled = false,
             Stroked = true,
             Smooth = opts.FreehandSmooth,
+            Brush = string.IsNullOrEmpty(opts.BrushPreset) ? "" : opts.BrushPreset,
+            BrushAngle = opts.BrushAngle,
         };
 
         // Нажим пера: если толщина заметно менялась — сохраняем профиль по точкам.
@@ -1057,40 +1066,75 @@ public class BucketTool : Tool
 
 public class EraserTool : Tool
 {
-    private readonly List<(ShapeElement shape, List<Vec> original, Keyframe kf)> _touched =
-        new List<(ShapeElement, List<Vec>, Keyframe)>();
+    private bool _changed;
+    private Vec _lastPoint;
+    private bool _hasLast;
 
     public override string Id => "eraser";
     public override string Title => "Ластик";
-    public override string Hint => "Стирайте части фигур движением мыши. Alt — удалить объект целиком.";
+    public override string Hint => "Режет штрихи на части. Alt — удалить объект целиком, размер — в параметрах инструмента.";
+
+    /// <summary>Радиус ластика в мировых единицах.</summary>
+    private double Radius(ToolContext ctx) =>
+        Math.Max(2, ctx.Store.Opts.EraserSize) * 0.5 * ctx.Px;
 
     public override void Down(ToolContext ctx, Vec p, bool rightButton)
     {
-        _touched.Clear();
         Dragging = true;
-        Erase(ctx, p);
+        _changed = false;
+        _hasLast = false;
+        EraseAt(ctx, p);
+        _lastPoint = p;
+        _hasLast = true;
+        if (_changed) ctx.Redraw();
     }
 
     public override void Move(ToolContext ctx, Vec p)
     {
-        if (Dragging) Erase(ctx, p);
+        if (!Dragging) return;
+
+        // Между двумя событиями мыши может быть заметный пробел — стираем по всей
+        // пройденной траектории, иначе быстрые движения оставляют нетронутые участки.
+        if (_hasLast)
+        {
+            double radius = Radius(ctx);
+            double dx = p.X - _lastPoint.X;
+            double dy = p.Y - _lastPoint.Y;
+            double distance = Math.Sqrt(dx * dx + dy * dy);
+            int steps = (int)Math.Min(96, Math.Max(1, Math.Ceiling(distance / Math.Max(0.5, radius * 0.4))));
+            for (int i = 1; i <= steps; i++)
+            {
+                double t = i / (double)steps;
+                EraseAt(ctx, new Vec(_lastPoint.X + dx * t, _lastPoint.Y + dy * t));
+            }
+        }
+        else
+        {
+            EraseAt(ctx, p);
+        }
+
+        _lastPoint = p;
+        _hasLast = true;
+        if (_changed) ctx.Redraw();
     }
 
     public override void Up(ToolContext ctx, Vec p)
     {
+        if (!Dragging) return;
         Dragging = false;
-        if (_touched.Count > 0)
+        _hasLast = false;
+        if (_changed)
         {
+            _changed = false;
             ctx.Store.Commit("Ластик");
             ctx.Store.RaiseAll();
         }
-        _touched.Clear();
     }
 
-    private void Erase(ToolContext ctx, Vec p)
+    private void EraseAt(ToolContext ctx, Vec p)
     {
         var store = ctx.Store;
-        double radius = 14 * ctx.Px;
+        var kf = store.ActiveKeyframe;
 
         if (ctx.Alt)
         {
@@ -1103,43 +1147,113 @@ public class EraserTool : Tool
             return;
         }
 
-        var kf = store.ActiveKeyframe;
         if (kf == null) return;
-        bool changed = false;
+        double radius = Radius(ctx);
 
-        foreach (var element in kf.Elements.ToList())
+        // Обходим с конца: при разрезании элемента список меняется.
+        for (int index = kf.Elements.Count - 1; index >= 0; index--)
         {
-            if (!(element is ShapeElement shape)) continue;
+            if (!(kf.Elements[index] is ShapeElement shape)) continue;
+            if (shape.Locked || shape.Points == null || shape.Points.Count == 0) continue;
+
             Mat matrix = store.WorldMatrix(shape);
             if (!matrix.TryInvert(out Mat inv)) continue;
+
             Vec local = inv.Apply(p);
-            double localRadius = radius / Math.Max(0.05, Math.Sqrt(Math.Abs(matrix.A * matrix.D - matrix.B * matrix.C)));
+            double scale = Math.Sqrt(Math.Abs(matrix.A * matrix.D - matrix.B * matrix.C));
+            double localRadius = radius / Math.Max(0.02, scale);
 
-            var record = _touched.FirstOrDefault(t => t.shape == shape);
-            if (record.shape == null)
+            if (shape.Points.Count == 1)
             {
-                _touched.Add((shape, new List<Vec>(shape.Points), kf));
+                if (Distance(local, shape.Points[0]) <= localRadius)
+                {
+                    kf.Elements.RemoveAt(index);
+                    _changed = true;
+                }
+                continue;
             }
 
-            var kept = new List<Vec>();
-            foreach (var pt in shape.Points)
+            // Замкнутые фигуры (прямоугольники, эллипсы, заливки) стираются целиком:
+            // разрезать замкнутый контур на части без пересчёта заливки нельзя.
+            if (shape.Closed)
             {
-                double d = Math.Sqrt(Math.Pow(pt.X - local.X, 2) + Math.Pow(pt.Y - local.Y, 2));
-                if (d > localRadius) kept.Add(pt);
-                else changed = true;
+                if (Touches(shape.Points, true, local, localRadius))
+                {
+                    kf.Elements.RemoveAt(index);
+                    _changed = true;
+                }
+                continue;
             }
-            if (kept.Count < 2)
+
+            int count = shape.Points.Count;
+            var keep = new bool[count - 1];
+            bool anyCut = false;
+            for (int i = 0; i < count - 1; i++)
             {
-                kf.Elements.Remove(shape);
-                changed = true;
+                keep[i] = DistanceToSegment(local, shape.Points[i], shape.Points[i + 1]) > localRadius;
+                if (!keep[i]) anyCut = true;
             }
-            else if (kept.Count != shape.Points.Count)
+            if (!anyCut) continue;
+
+            // Собираем непрерывные куски уцелевших сегментов.
+            var runs = new List<(int start, int end)>();
+            int k = 0;
+            while (k < count - 1)
             {
-                shape.Points = kept;
-                changed = true;
+                if (!keep[k]) { k++; continue; }
+                int start = k;
+                while (k < count - 1 && keep[k]) k++;
+                if (k - start >= 1) runs.Add((start, k));
             }
+
+            if (runs.Count == 0)
+            {
+                kf.Elements.RemoveAt(index);
+                _changed = true;
+                continue;
+            }
+
+            var pieces = new List<Element>();
+            foreach (var run in runs)
+            {
+                var piece = (ShapeElement)shape.Clone();
+                piece.Id = Ids.New("el");
+                int length = run.end - run.start + 1;
+                piece.Points = shape.Points.GetRange(run.start, length);
+                if (shape.Widths != null && shape.Widths.Count == count)
+                    piece.Widths = shape.Widths.GetRange(run.start, length);
+                pieces.Add(piece);
+            }
+
+            kf.Elements.RemoveAt(index);
+            for (int i = 0; i < pieces.Count; i++) kf.Elements.Insert(index + i, pieces[i]);
+            _changed = true;
         }
-        if (changed) ctx.Redraw();
+    }
+
+    private static double Distance(Vec a, Vec b)
+    {
+        double dx = a.X - b.X, dy = a.Y - b.Y;
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
+
+    private static double DistanceToSegment(Vec p, Vec a, Vec b)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y;
+        double length = dx * dx + dy * dy;
+        if (length < 1e-12) return Distance(p, a);
+        double t = ((p.X - a.X) * dx + (p.Y - a.Y) * dy) / length;
+        t = Math.Max(0, Math.Min(1, t));
+        return Distance(p, new Vec(a.X + dx * t, a.Y + dy * t));
+    }
+
+    private static bool Touches(IList<Vec> points, bool closed, Vec center, double radius)
+    {
+        for (int i = 0; i < points.Count - 1; i++)
+            if (DistanceToSegment(center, points[i], points[i + 1]) <= radius) return true;
+        if (closed && points.Count > 2)
+            return DistanceToSegment(center, points[points.Count - 1], points[0]) <= radius;
+        return false;
     }
 
     public override void DrawOverlay(DrawingContext dc, ToolContext ctx)

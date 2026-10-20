@@ -274,24 +274,42 @@ public static class Exporter
     {
         int length = Math.Max(1, Anim.SceneLength(project.Timeline));
         columns = Math.Max(1, columns);
-        int rows = (int)Math.Ceiling(length / (double)columns);
 
-        BitmapSource first = RenderFrame(project, 0, scale, transparent);
-        int cellW = first.PixelWidth, cellH = first.PixelHeight;
+        // Сначала рендерим все кадры и ищем одинаковые: одинаковые кадры занимают
+        // одну ячейку атласа, а не дублируются (важно для долгих пауз и статики).
+        var frames = new BitmapSource[length];
+        var slotOfFrame = new int[length];
+        var unique = new List<BitmapSource>();
+        var lookup = new Dictionary<string, int>();
+
+        for (int frame = 0; frame < length; frame++)
+        {
+            BitmapSource bitmap = RenderFrame(project, frame, scale, transparent);
+            frames[frame] = bitmap;
+            string key = FrameKey(bitmap);
+            if (!lookup.TryGetValue(key, out int slot))
+            {
+                slot = unique.Count;
+                lookup[key] = slot;
+                unique.Add(bitmap);
+            }
+            slotOfFrame[frame] = slot;
+            progress?.Invoke(frame + 1, length);
+        }
+
+        int textures = Math.Max(1, unique.Count);
+        int rows = (int)Math.Ceiling(textures / (double)columns);
+        int cellW = frames[0].PixelWidth, cellH = frames[0].PixelHeight;
         int sheetW = cellW * columns, sheetH = cellH * rows;
 
         var visual = new DrawingVisual();
         using (DrawingContext dc = visual.RenderOpen())
         {
             dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, sheetW, sheetH));
-            for (int frame = 0; frame < length; frame++)
+            for (int slot = 0; slot < unique.Count; slot++)
             {
-                BitmapSource bitmap = frame == 0 ? first : RenderFrame(project, frame, scale, transparent);
-                int col = frame % columns, row = frame / columns;
-                dc.DrawImage(bitmap, new Rect(col * cellW, row * cellH, cellW, cellH));
-                dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(40, 0, 0, 0)), 1),
-                    new Rect(col * cellW, row * cellH, cellW, cellH));
-                progress?.Invoke(frame + 1, length);
+                int col = slot % columns, row = slot / columns;
+                dc.DrawImage(unique[slot], new Rect(col * cellW, row * cellH, cellW, cellH));
             }
         }
 
@@ -299,27 +317,41 @@ public static class Exporter
         sheet.Render(visual);
         sheet.Freeze();
         SavePng(sheet, path);
-        return WriteSpriteSheetXml(project, path, cellW, cellH, columns, length);
+        return WriteSpriteSheetXml(project, path, cellW, cellH, columns, length, slotOfFrame, unique.Count);
+    }
+
+    /// <summary>Отпечаток кадра по пикселям: одинаковые кадры дают одинаковый ключ.</summary>
+    private static string FrameKey(BitmapSource bitmap)
+    {
+        int stride = bitmap.PixelWidth * 4;
+        var pixels = new byte[stride * Math.Max(1, bitmap.PixelHeight)];
+        bitmap.CopyPixels(pixels, stride, 0);
+        using (var sha = System.Security.Cryptography.SHA256.Create())
+            return Convert.ToHexString(sha.ComputeHash(pixels));
     }
 
     /// <summary>XML-описание спрайт-листа (формат Starling/Sparrow).</summary>
-    private static string WriteSpriteSheetXml(Project project, string sheetPath, int cellW, int cellH, int columns, int length)
+    private static string WriteSpriteSheetXml(Project project, string sheetPath, int cellW, int cellH, int columns,
+        int length, int[] slotOfFrame, int textures)
     {
         string prefix = Path.GetFileNameWithoutExtension(sheetPath);
         if (prefix.EndsWith("_sheet", StringComparison.OrdinalIgnoreCase))
             prefix = prefix.Substring(0, prefix.Length - "_sheet".Length);
         if (string.IsNullOrWhiteSpace(prefix)) prefix = "frame";
 
-        int rows = (int)Math.Ceiling(length / (double)columns);
+        int rows = (int)Math.Ceiling(Math.Max(1, textures) / (double)columns);
         var root = new XElement("TextureAtlas",
             new XAttribute("imagePath", Path.GetFileName(sheetPath)),
             new XAttribute("width", cellW * columns),
             new XAttribute("height", cellH * rows),
-            new XAttribute("fps", project.Stage.Fps));
+            new XAttribute("fps", project.Stage.Fps),
+            new XAttribute("frames", length),
+            new XAttribute("textures", textures));
 
         for (int frame = 0; frame < length; frame++)
         {
-            int col = frame % columns, row = frame / columns;
+            int slot = slotOfFrame != null && frame < slotOfFrame.Length ? slotOfFrame[frame] : frame;
+            int col = slot % columns, row = slot / columns;
             root.Add(new XElement("SubTexture",
                 new XAttribute("name", prefix + "_" + frame.ToString("0000", CultureInfo.InvariantCulture)),
                 new XAttribute("x", col * cellW),

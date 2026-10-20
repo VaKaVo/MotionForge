@@ -60,6 +60,12 @@ public class ShapeElement : Element
     /// </summary>
     public List<double> Widths { get; set; }
 
+    /// <summary>Стиль кисти штриха: пусто — обычная линия; pencil, brush, marker, calligraphy, airbrush.</summary>
+    public string Brush { get; set; } = "";
+
+    /// <summary>Наклон пера каллиграфии в градусах (используется только стилем calligraphy).</summary>
+    public double BrushAngle { get; set; } = 45;
+
     public override ElementKind Kind => ElementKind.Shape;
     public override string TypeName => "Фигура";
 
@@ -69,6 +75,7 @@ public class ShapeElement : Element
         Closed = Closed, Fill = Fill, Stroke = Stroke, StrokeWidth = StrokeWidth,
         Smooth = Smooth, Filled = Filled, Stroked = Stroked,
         Widths = Widths == null ? null : new List<double>(Widths),
+        Brush = Brush, BrushAngle = BrushAngle,
     });
 
     /// <summary>Ширина/высота фигуры в её собственных координатах.</summary>

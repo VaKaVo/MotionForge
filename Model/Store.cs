@@ -11,6 +11,8 @@ public class ToolOptions
     public string Stroke = "#000000";
     public double StrokeWidth = 1;
     public double BrushSize = 16;
+    /// <summary>Диаметр ластика в экранных пикселях (не зависит от масштаба сцены).</summary>
+    public double EraserSize = 28;
     public bool Filled = true;
     public bool Stroked = true;
     public bool Smooth = false;
@@ -21,6 +23,12 @@ public class ToolOptions
     public bool Bold = true;
     public bool Italic;
     public string TextAlign = "left";
+    /// <summary>Стиль кисти для свободного рисования: pencil, brush, marker, calligraphy, airbrush.</summary>
+    public string BrushPreset = "brush";
+    /// <summary>Наклон пера каллиграфии в градусах.</summary>
+    public double BrushAngle = 45;
+    /// <summary>Сила сглаживания штриха, 0…100.</summary>
+    public double Smoothing = 50;
 }
 
 public class EditPathEntry
@@ -78,6 +86,9 @@ public class Store
     }
 
     public static double GridSize = 40;
+
+    /// <summary>Глубина истории отмены (настраивается в параметрах).</summary>
+    public static int UndoLimit = 90;
 
     /* ------------------------------------------------------------------ */
     /*  Доступ к активной сцене                                            */
@@ -199,7 +210,7 @@ public class Store
         _history.Add(snapshot);
         _labels.Add(string.IsNullOrEmpty(label) ? "Правка" : label);
         _index = _history.Count - 1;
-        while (_history.Count > 90)
+        while (_history.Count > Math.Max(10, UndoLimit))
         {
             _history.RemoveAt(0);
             _labels.RemoveAt(0);
@@ -251,6 +262,25 @@ public class Store
         Renderer.ClearCaches();
         RaiseAll();
         HistoryChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Заменяет содержимое проекта, сохраняя историю отмены (используется плагинами).
+    /// </summary>
+    public void ApplyProject(Project project, string label)
+    {
+        if (project == null) return;
+        Project = project;
+        EditPath.Clear();
+        Selection.Clear();
+        EnsureStructure();
+        NormalizeTimeline(Project.Timeline);
+        foreach (var symbol in Project.Library.Values) NormalizeTimeline(symbol.Timeline);
+        if (Playhead >= Anim.SceneLength(Project.Timeline)) Playhead = 0;
+        Renderer.ClearCaches();
+        Dirty = true;
+        Commit(string.IsNullOrEmpty(label) ? "Плагин" : label);
+        RaiseAll();
     }
 
     public void ReplaceProject(Project project, string filePath)

@@ -23,6 +23,10 @@ public interface IAppShell
     void ShowAbout();
     /// <summary>Проверяет обновления на GitHub (ручной вызов из меню «Помощь»).</summary>
     void CheckUpdates();
+    /// <summary>Запускает плагин по идентификатору (меню «Плагины»).</summary>
+    void RunPlugin(string id);
+    /// <summary>Окно со списком установленных плагинов.</summary>
+    void ShowPlugins();
     void CreateSymbolFromSelection();
     void ZoomBy(double factor);
     void ZoomTo(double zoom);
@@ -69,6 +73,7 @@ public static class Commands
         BuildView();
         BuildWindow();
         BuildHelp();
+        LoadPluginCommands();
     }
 
     public static Cmd Find(string id) => All.FirstOrDefault(c => c.Id == id);
@@ -80,6 +85,30 @@ public static class Commands
         var cmd = new Cmd { Id = id, Group = group, Title = title, Keys = keys, Run = run, Enabled = enabled, Checked = check };
         All.Add(cmd);
         return cmd;
+    }
+
+    /// <summary>
+    /// Пересобирает команды плагинов: каждая папка в каталоге Plugins даёт пункт меню.
+    /// Вызывается при запуске и при обновлении списка плагинов.
+    /// </summary>
+    public static int LoadPluginCommands()
+    {
+        All.RemoveAll(c => c.Group == "Плагины");
+
+        var plugins = Plugins.Load();
+        int ready = 0;
+        foreach (PluginInfo plugin in plugins)
+        {
+            if (!plugin.Ready) continue;
+            ready++;
+            string id = plugin.Id;
+            Add("plugin." + id, "Плагины", plugin.Title, "", s => s.RunPlugin(id));
+        }
+
+        Add("plugin.list", "Плагины", "Плагины…", "", s => s.ShowPlugins());
+        Add("plugin.folder", "Плагины", "Открыть папку плагинов", "", s => Plugins.OpenFolder());
+        Add("plugin.reload", "Плагины", "Обновить список плагинов", "", s => { LoadPluginCommands(); s.RefreshAll(); });
+        return ready;
     }
 
     private static void BuildTools()

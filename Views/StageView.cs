@@ -172,15 +172,35 @@ public class StageView : Canvas
         _ctx.Invalidate = InvalidateVisual;
         try { CurrentTool.DrawOverlay(dc, _ctx); } catch { /* оверлей не должен ломать кадр */ }
 
-        // курсор инструмента (ластик/кисть)
-        if (_hasMouse && !_panning)
+        // курсор инструмента (ластик/кисть): системный курсор скрыт, чтобы не было «двух» стрелок
+        string tool = Store.ToolId;
+        bool precise = tool == "eraser" || tool == "brush" || tool == "pencil";
+        if (_hasMouse && !_panning && !_spaceDown && precise)
         {
             Vec world = ToWorld(_mouseScreen);
             double radius = 0;
-            if (Store.ToolId == "eraser") radius = 14 * Px;
-            else if (Store.ToolId == "brush") radius = Math.Max(2, Store.Opts.BrushSize / 2);
+            if (tool == "eraser") radius = Math.Max(2, Store.Opts.EraserSize) * 0.5 * Px;
+            else if (tool == "brush") radius = Math.Max(2, Store.Opts.BrushSize) * 0.5;
+
+            // Тёмная подложка + светлый контур: курсор виден и на светлом, и на тёмном.
+            var dark = new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), 3 * Px);
+            var light = new Pen(new SolidColorBrush(Color.FromArgb(235, 0xE8, 0xEC, 0xF6)), 1 * Px);
             if (radius > 0)
-                dc.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(180, 0xE6, 0xE9, 0xF2)), Px), new Point(world.X, world.Y), radius, radius);
+            {
+                var center = new Point(world.X, world.Y);
+                dc.DrawEllipse(null, dark, center, radius, radius);
+                dc.DrawEllipse(null, light, center, radius, radius);
+            }
+
+            double arm = radius > 0 ? 3.5 * Px : 4 * Px;
+            var h1 = new Point(world.X - arm, world.Y);
+            var h2 = new Point(world.X + arm, world.Y);
+            var v1 = new Point(world.X, world.Y - arm);
+            var v2 = new Point(world.X, world.Y + arm);
+            dc.DrawLine(dark, h1, h2);
+            dc.DrawLine(dark, v1, v2);
+            dc.DrawLine(light, h1, h2);
+            dc.DrawLine(light, v1, v2);
         }
 
         dc.Pop();
@@ -227,13 +247,19 @@ public class StageView : Canvas
         return true;
     }
 
-    /// <summary>Сила нажатия из набора точек (0.05…1). Нули драйверов трактуем как «нажатие не поддерживается».</summary>
-    private double PressureOf(StylusPointCollection points)
+    /// <summary>Сила нажатия точки (0.05…1). Нули драйверов трактуем как «нажатие не поддерживается».</summary>
+    private double PressureOfPoint(StylusPoint point)
     {
-        if (!Settings.TabletPressure || points == null || points.Count == 0) return 1;
-        float p = points[points.Count - 1].PressureFactor;
+        if (!Settings.TabletPressure) return 1;
+        float p = point.PressureFactor;
         if (float.IsNaN(p) || p <= 0.02f) return 1;
         return Math.Min(1, Math.Max(0.05, p));
+    }
+
+    private double PressureOf(StylusPointCollection points)
+    {
+        if (points == null || points.Count == 0) return 1;
+        return PressureOfPoint(points[points.Count - 1]);
     }
 
     protected override void OnStylusDown(StylusDownEventArgs e)
@@ -297,23 +323,29 @@ public class StageView : Canvas
         }
 
         StylusPointCollection points = e.GetStylusPoints(this);
-        _ctx.Pressure = PressureOf(points);
-        if (points.Count > 0)
-        {
-            _mouseScreen = points[points.Count - 1].ToPoint();
-            _hasMouse = true;
-        }
-        Vec world = ToWorld(_mouseScreen);
+        if (points.Count == 0) return;
 
         if (_panning)
         {
+            StylusPoint last = points[points.Count - 1];
+            _ctx.Pressure = PressureOfPoint(last);
+            _mouseScreen = last.ToPoint();
+            _hasMouse = true;
             double dx = _mouseScreen.X - _panStartScreen.X;
             double dy = _mouseScreen.Y - _panStartScreen.Y;
             Store.SetPan(_panStartX + dx, _panStartY + dy);
         }
         else
         {
-            CurrentTool.Move(_ctx, world);
+            // Пакет пера может содержать несколько точек: обрабатываем все,
+            // иначе быстрые движения срезаются в ломаную линию.
+            foreach (StylusPoint point in points)
+            {
+                _ctx.Pressure = PressureOfPoint(point);
+                _mouseScreen = point.ToPoint();
+                CurrentTool.Move(_ctx, ToWorld(_mouseScreen));
+            }
+            _hasMouse = true;
         }
         InvalidateVisual();
         e.Handled = true;
@@ -420,6 +452,7 @@ public class StageView : Canvas
 
         SyncContext(Keyboard.Modifiers);
         CurrentTool.Move(_ctx, world);
+        UpdateCursor();
         InvalidateVisual();
     }
 
@@ -453,7 +486,7 @@ public class StageView : Canvas
     private void EndPan()
     {
         _panning = false;
-        Cursor = _spaceDown ? Cursors.SizeAll : null;
+        UpdateCursor();
         ReleaseMouseCapture();
     }
 
@@ -482,7 +515,24 @@ public class StageView : Canvas
     {
         base.OnMouseLeave(e);
         _hasMouse = false;
+        Cursor = Cursors.Arrow;
         InvalidateVisual();
+    }
+
+    protected override void OnMouseEnter(MouseEventArgs e)
+    {
+        base.OnMouseEnter(e);
+        _hasMouse = true;
+        UpdateCursor();
+        InvalidateVisual();
+    }
+
+    /// <summary>Для рисующих инструментов системный курсор скрыт — на сцене рисуется свой.</summary>
+    private void UpdateCursor()
+    {
+        if (_panning || _spaceDown) { Cursor = Cursors.SizeAll; return; }
+        string tool = Store?.ToolId;
+        Cursor = tool == "eraser" || tool == "brush" || tool == "pencil" ? Cursors.None : Cursors.Arrow;
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -542,7 +592,7 @@ public class StageView : Canvas
         if (e.Key == Key.Space)
         {
             _spaceDown = false;
-            if (!_panning) Cursor = null;
+            if (!_panning) UpdateCursor();
         }
     }
 

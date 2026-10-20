@@ -213,14 +213,33 @@ public static class Renderer
             return;
         }
 
-        // Линия с профилем толщины (рисование пером с нажатием) — рисуем «лентой».
-        if (shape.Widths != null && shape.Widths.Count == points.Count && !shape.Closed && shape.StrokeWidth > 0)
+        // Штрих кистью: профиль толщины + стиль кисти (маркер, каллиграфия, аэрограф).
+        string preset = shape.Brush ?? "";
+        bool hasWidths = shape.Widths != null && shape.Widths.Count == points.Count;
+        if ((hasWidths || preset.Length > 0) && !shape.Closed && shape.StrokeWidth > 0)
         {
-            double scale = Math.Max(0.02, ev.StrokeWidth / shape.StrokeWidth);
-            var ribbonBrush = GetBrush(ev.Stroke ?? shape.Stroke, 1);
-            if (ribbonBrush != null)
+            double strokeScale = Math.Max(0.02, ev.StrokeWidth / shape.StrokeWidth);
+            string color = ev.Stroke ?? shape.Stroke;
+            var brush = GetBrush(color, 1);
+            if (brush != null)
             {
-                DrawRibbon(dc, points, shape.Widths, ribbonBrush, scale, shape.Smooth);
+                List<double> widths = hasWidths
+                    ? new List<double>(shape.Widths)
+                    : Repeat(shape.StrokeWidth, points.Count);
+                widths = ApplyPreset(preset, points, widths, shape.BrushAngle);
+
+                if (preset == "airbrush")
+                {
+                    var haloWidths = new List<double>(widths.Count);
+                    foreach (double w in widths) haloWidths.Add(w * 2.6);
+                    var halo = GetBrush(color, 0.14);
+                    if (halo != null) DrawRibbon(dc, points, haloWidths, halo, strokeScale, shape.Smooth);
+                    DrawRibbon(dc, points, widths, GetBrush(color, 0.62) ?? brush, strokeScale, shape.Smooth);
+                    return;
+                }
+
+                var ink = preset == "marker" ? (GetBrush(color, 0.85) ?? brush) : brush;
+                DrawRibbon(dc, points, widths, ink, strokeScale, shape.Smooth, preset == "marker");
                 return;
             }
         }
@@ -236,7 +255,7 @@ public static class Renderer
     /// соединяем в замкнутый контур и заливаем. Торцы скругляются.
     /// </summary>
     public static void DrawRibbon(DrawingContext dc, IList<Vec> points, IList<double> widths, Brush brush, double scale,
-        bool smooth = false)
+        bool smooth = false, bool flatCaps = false)
     {
         if (points == null || widths == null || brush == null) return;
         int n = Math.Min(points.Count, widths.Count);
@@ -286,10 +305,41 @@ public static class Renderer
         dc.DrawGeometry(brush, null, geometry);
 
         // Круглые торцы — отдельными кругами: надёжнее дуг в контуре.
-        double r0 = Math.Max(0.15, ws[0] * scale) / 2;
-        double rn = Math.Max(0.15, ws[n - 1] * scale) / 2;
-        dc.DrawEllipse(brush, null, new Point(pts[0].X, pts[0].Y), r0, r0);
-        dc.DrawEllipse(brush, null, new Point(pts[n - 1].X, pts[n - 1].Y), rn, rn);
+        if (!flatCaps)
+        {
+            double r0 = Math.Max(0.15, ws[0] * scale) / 2;
+            double rn = Math.Max(0.15, ws[n - 1] * scale) / 2;
+            dc.DrawEllipse(brush, null, new Point(pts[0].X, pts[0].Y), r0, r0);
+            dc.DrawEllipse(brush, null, new Point(pts[n - 1].X, pts[n - 1].Y), rn, rn);
+        }
+    }
+
+    /// <summary>Толщина штриха с учётом стиля кисти.</summary>
+    private static List<double> ApplyPreset(string preset, IList<Vec> points, List<double> widths, double angle)
+    {
+        if (preset != "calligraphy" || points == null || widths.Count < 2) return widths;
+
+        // Каллиграфия: ширина зависит от направления движения относительно пера.
+        double nib = angle * Math.PI / 180.0;
+        var result = new List<double>(widths.Count);
+        for (int i = 0; i < widths.Count; i++)
+        {
+            Vec prev = points[Math.Max(0, i - 1)];
+            Vec next = points[Math.Min(points.Count - 1, i + 1)];
+            double dx = next.X - prev.X, dy = next.Y - prev.Y;
+            double length = Math.Sqrt(dx * dx + dy * dy);
+            double direction = length < 1e-9 ? nib : Math.Atan2(dy, dx);
+            double factor = Math.Abs(Math.Sin(direction - nib));
+            result.Add(widths[i] * (0.18 + 0.82 * factor));
+        }
+        return result;
+    }
+
+    private static List<double> Repeat(double value, int count)
+    {
+        var list = new List<double>(count);
+        for (int i = 0; i < count; i++) list.Add(value);
+        return list;
     }
 
     private static void DrawText(DrawingContext dc, TextElement text, EvalElement ev, RenderOptions options)

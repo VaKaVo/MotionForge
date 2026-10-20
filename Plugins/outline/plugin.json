@@ -1,0 +1,11 @@
+{
+  "id": "outline",
+  "name": "Жирная обводка",
+  "name_en": "Bold outline",
+  "version": "1.0",
+  "author": "MotionForge",
+  "description": "Добавляет контур всем фигурам текущего кадра — удобно для единого стиля рисунка.",
+  "type": "python",
+  "command": "outline.py",
+  "timeout": 30
+}

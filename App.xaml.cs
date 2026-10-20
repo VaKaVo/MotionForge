@@ -3,6 +3,7 @@ using System.Linq;
 using System.Windows;
 using MotionForge.Model;
 using MotionForge.Services;
+using MotionForge.Views;
 
 namespace MotionForge;
 
@@ -34,6 +35,19 @@ public partial class App : Application
             return;
         }
 
+        // Служебный режим: собрать иконку и превью знака (используется при сборке релиза).
+        int iconIndex = Array.FindIndex(e.Args, a => string.Equals(a, "--export-icon", StringComparison.OrdinalIgnoreCase));
+        if (iconIndex >= 0)
+        {
+            string target = iconIndex + 1 < e.Args.Length ? e.Args[iconIndex + 1]
+                : System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico");
+            Branding.ExportIco(target);
+            Branding.SavePng(Branding.Render(256), System.IO.Path.Combine(System.IO.Path.GetDirectoryName(target), "preview-256.png"));
+            Branding.SavePng(Branding.Render(32), System.IO.Path.Combine(System.IO.Path.GetDirectoryName(target), "preview-32.png"));
+            Shutdown(0);
+            return;
+        }
+
         DispatcherUnhandledException += (_, args) =>
         {
             LogError(args.Exception);
@@ -44,9 +58,33 @@ public partial class App : Application
 
         try
         {
+            // Заставка: показывает знак приложения, пока готовится главное окно.
+            SplashWindow splash = null;
+            if (AppSettings.Current.ShowSplash && e.Args.Length == 0)
+            {
+                splash = new SplashWindow();
+                splash.Show();
+            }
+
             var window = new MainWindow();
             MainWindow = window;
             window.Show();
+
+            if (splash != null)
+            {
+                // Держим заставку не меньше секунды, чтобы она не «мигала»,
+                // и закрываем, когда главное окно уже нарисовано.
+                var timer = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(1100),
+                };
+                timer.Tick += (_, __) =>
+                {
+                    timer.Stop();
+                    try { splash.Close(); } catch { /* окно могло быть закрыто пользователем */ }
+                };
+                timer.Start();
+            }
         }
         catch (Exception ex)
         {

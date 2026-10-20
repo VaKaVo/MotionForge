@@ -1,0 +1,12 @@
+{
+  "id": "template",
+  "name": "Мой плагин",
+  "name_en": "My plugin",
+  "version": "1.0",
+  "author": "Ваше имя",
+  "description": "Шаблон плагина MotionForge. Скопируйте папку, уберите знак «_» в начале имени и отредактируйте файлы.",
+  "type": "python",
+  "command": "plugin.py",
+  "arguments": [],
+  "timeout": 60
+}

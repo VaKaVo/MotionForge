@@ -1,0 +1,11 @@
+{
+  "id": "stars",
+  "name": "Звёздное небо",
+  "name_en": "Starry sky",
+  "version": "1.0",
+  "author": "MotionForge",
+  "description": "Добавляет случайные звёзды на текущий кадр верхнего слоя. Пример плагина, который создаёт новые фигуры.",
+  "type": "python",
+  "command": "stars.py",
+  "timeout": 30
+}

@@ -6,7 +6,8 @@
 symbols and a library, vector drawing, and export to GIF, PNG sequences, sprite sheets and SVG.
 
 Written from scratch in **C# / .NET 10 (WPF)**. No external dependencies, no NuGet packages and
-no third-party libraries — only the base .NET assemblies. MIT licensed.
+no third-party libraries — only the base .NET assemblies. Free for personal, educational and
+other non-commercial use; see [License](#license).
 
 ![MotionForge main window](docs/screenshot.png)
 
@@ -36,17 +37,26 @@ no third-party libraries — only the base .NET assemblies. MIT licensed.
 * Snap to grid, modifier keys while drawing (Shift/Alt).
 * Smooth freehand strokes: the path is fitted with a Catmull-Rom curve, and pressure profiles are
   drawn as a continuous ribbon, so a line never breaks apart where it crosses itself.
+* **Five brush styles** — pencil, brush, marker (flat caps, slight transparency), calligraphy
+  (width depends on the stroke direction and nib angle) and airbrush (soft halo around a solid
+  core). The style lives on each element and is saved with the project.
+* **Eraser that really erases**: it cuts a stroke into separate pieces instead of moving it,
+  removes closed shapes whole (their fill cannot be split without a re-fill) and deletes an
+  object entirely with `Alt`+click. The eraser path is interpolated between mouse events, so fast
+  swipes leave no untouched gaps.
+* One precise cursor on the stage: for the pencil, brush and eraser the system arrow is hidden and
+  a double-contrast ring (with a crosshair) is drawn instead — no "two cursors" effect.
 * Images: `Ctrl+I` imports a file; `Ctrl+V` pastes a screenshot or an image copied in Explorer, and
   repeated pastes cascade instead of covering each other.
 
 ### Application
-* **Undo/redo** (snapshot history, up to 90 steps).
+* **Undo/redo** (snapshot history, 90 steps by default, adjustable up to 500).
 * **Command palette** (`Ctrl+K`) with search across every action.
 * **New document** (`Ctrl+N`): ready-made stage sizes by category (film, web, mobile, square),
   frame rate and background colour.
 * **Settings** (`Ctrl+,`): sections with search, like the Windows Settings app — interface
-  language, grid, onion skin, drawing, graphics tablet, autosave. Stored in
-  `%APPDATA%\MotionForge\settings.json`.
+  language, grid, onion skin, drawing (brush style, eraser size, smoothing, undo depth), graphics
+  tablet, autosave, plugins. Stored in `%APPDATA%\MotionForge\settings.json`.
 * **Graphics tablet**: pen input is handled separately from the mouse, pressure sets the stroke
   width (WPF `StylusPoint.PressureFactor`), the eraser end of the stylus erases, and finger
   touches can be ignored (palm rejection).
@@ -60,8 +70,12 @@ no third-party libraries — only the base .NET assemblies. MIT licensed.
   settings), shows what's new and installs the new build itself — downloads the archive,
   replaces the files after exiting and starts again. There's also «Help → Check for
   Updates…» for a manual check.
-* Built-in **self-test** (`--selftest`): 125 checks covering the core, geometry, undo, save and
-  load, localisation, settings, updates and every exporter.
+* Built-in **self-test** (`--selftest`): 144 checks covering the core, geometry, undo, save and
+  load, localisation, settings, brushes, the eraser, sprite-sheet deduplication, plugins, updates
+  and every exporter.
+* **Plugins**: drop a folder into `Plugins\` and it appears in the `Plugins` menu — Python (or any
+  executable) receives the project as JSON, modifies it and returns the result. Full guide and
+  ready-made examples: [PLUGINS.md](PLUGINS.md).
 
 ### Export
 
@@ -75,7 +89,39 @@ no third-party libraries — only the base .NET assemblies. MIT licensed.
 
 The sprite-sheet XML uses the Starling/Sparrow `TextureAtlas` format, which Phaser, PixiJS,
 Unity plugins and other engines read out of the box: every frame is a `<SubTexture>` with its
-name and pixel rectangle, and the sheet size and frame rate are on the root element.
+name and pixel rectangle, and the sheet size and frame rate are on the root element. **Identical
+frames occupy one atlas cell**: the pixels are hashed, duplicates share the same `x`/`y`, and the
+sheet has no unused cells — `frames` and `textures` on the root element show how many frames went
+into how many cells.
+
+---
+
+## Plugins
+
+![Plugins menu](docs/plugins.png)
+
+MotionForge is extended without touching its code. Each plugin is a folder next to the
+executable:
+
+```
+Plugins\
+  stars\        «Starry sky» — adds random stars to the current frame
+    plugin.json
+    stars.py
+  outline\      «Bold outline» — outlines every shape in the current frame
+  _template\    a commented template: copy it, rename it, edit it
+```
+
+`plugin.json` declares the name, description, command time-out and the script to run. The host
+launches `python <script> --input project.json --output result.json --frame N`, the plugin reads
+the project, edits the JSON and writes it back; the changes arrive as a single undo step. Any
+output (including Python tracebacks) is shown in a report window. Plugins can be written in
+Python or any language that can read and write JSON. Folders starting with `_` are ignored, so
+the template is never loaded as a plugin.
+
+The complete guide, the project JSON reference and step-by-step instructions live in
+**[PLUGINS.md](PLUGINS.md)** (Russian and English). The `Plugins` menu also has «Open plugins
+folder» and «Reload plugin list».
 
 ---
 
@@ -87,12 +133,13 @@ The **Edit → Settings…** dialog (`Ctrl+,`) keeps everything in one place:
 
 | Section | What you can change |
 | --- | --- |
-| General | interface language, status bar hints, asking before closing with unsaved changes |
+| General | interface language, status bar hints, asking before closing with unsaved changes, update check, splash screen |
 | Stage | grid, grid step, snap new shapes to the grid, outline-only view |
 | Onion skin | on/off, how many frames before and after |
-| Drawing | default stroke width, brush size, stroke smoothing |
+| Drawing | default stroke width, brush size, brush style, eraser size, stroke smoothing, undo depth |
 | Graphics tablet | pen separate from the mouse, pressure → stroke width, ignore finger touches |
 | Autosave | interval in minutes (`0` turns it off) |
+| Plugins | Python command, open the plugins folder, re-scan for plugins |
 
 The window follows the Windows Settings pattern: sections on the left, a search field on top,
 the selected section's fields on the right plus a "Reset section" button. The buttons at the
@@ -200,6 +247,7 @@ Development and documentation flags:
 | --- | --- |
 | `--selftest` | run the checks and exit |
 | `--lang-template` | dump every UI string into a translation template and exit |
+| `--export-icon <path>` | render the application icon (multi-size `.ico`) and exit |
 | `--prefs` | open the settings window right after launch (handy for screenshots) |
 | `--newdoc` | open the New Document window right after launch |
 
@@ -256,8 +304,10 @@ MotionForge/
 ├─ Tools/                        drawing and selection tools
 ├─ Views/                        stage, timeline, panels, dialogs, UI helpers
 ├─ Localization/                 translation tables (en.json, de.json, fr.json, …)
-├─ Assets/app.ico                application icon
-└─ docs/                         screenshots of the app, settings and new document
+├─ Plugins/                      sample plugins (starry sky, bold outline, template)
+├─ Assets/app.ico                application icon (gradient + white eagle)
+├─ PLUGINS.md                    plugin guide: protocol, project JSON, examples
+└─ docs/                         screenshots of the app, settings, new document and plugins
 ```
 
 The document model does not depend on WPF: it can be used in tests and console scenarios
@@ -274,11 +324,20 @@ The document model does not depend on WPF: it can be used in tests and console s
 
 ## License
 
-[MIT](LICENSE).
+**[PolyForm Noncommercial 1.0.0](LICENSE)** — source-available, free for personal, educational,
+hobby and other non-commercial use. You may read, modify and share the code, but **selling
+MotionForge, bundling it into a paid product or using it commercially requires written permission
+from the author**. Copies and modified versions must keep the copyright notice and the license
+reference. Versions up to 1.1.0 were released under MIT; that grant is not revoked for copies
+already obtained, while 1.2.0 and later are covered by this license.
+
+Why the change: MIT allows anyone to resell the program as their own product. The project is
+meant to stay free, so the license now protects it from paid re-uploads and commercial resale
+while keeping the source open for learning and contributions.
 
 ## Disclaimer
 
-MotionForge is an independent open-source project. It is not affiliated with Adobe and does not
+MotionForge is an independent project. It is not affiliated with Adobe and does not
 use Adobe code, assets or icons. Adobe and Adobe Animate are trademarks of Adobe Inc. Format
 names (GIF, PNG, SVG) belong to their respective owners and are mentioned only to describe
 compatibility.
@@ -295,7 +354,8 @@ compatibility.
 спрайт-лист и SVG.
 
 Написана с нуля на **C# / .NET 10 (WPF)**. Никаких внешних зависимостей, NuGet-пакетов
-и сторонних библиотек — только базовые сборки .NET. Лицензия MIT.
+и сторонних библиотек — только базовые сборки .NET. Бесплатна для личного, учебного и другого
+некоммерческого использования; см. [«Лицензия»](#лицензия).
 
 ---
 
@@ -326,17 +386,26 @@ compatibility.
 * Привязка к сетке, автодополнение помощников при рисовании (Shift/Alt).
 * Ровные росчерки: линия сглаживается кривой Catmull-Rom, а профиль нажима рисуется сплошной
   «лентой» — штрих не разрывается там, где он пересекает сам себя.
+* **Пять стилей кисти** — карандаш, кисть, маркер (плоские торцы, лёгкая прозрачность),
+  каллиграфия (толщина зависит от направления штриха и угла пера) и аэрограф (мягкое свечение
+  вокруг плотного ядра). Стиль хранится у объекта и сохраняется вместе с проектом.
+* **Ластик, который действительно стирает**: он разрезает штрих на отдельные куски, а не сдвигает
+  его, замкнутые фигуры удаляет целиком (их заливку нельзя разрезать без пересчёта) и удаляет
+  объект полностью по `Alt`+щелчку. Между событиями мыши путь ластика достраивается, поэтому
+  быстрые движения не оставляют нетронутых участков.
+* Один точный курсор на сцене: для карандаша, кисти и ластика системная стрелка скрыта, вместо неё
+  рисуется кольцо с двойным контрастом и перекрестием — эффекта «двух курсоров» нет.
 * Изображения: `Ctrl+I` импортирует файл, `Ctrl+V` вставляет скриншот или картинку, скопированную
   в проводнике; повторные вставки идут каскадом и не ложатся друг на друга.
 
 ### Программа
-* **Отмена/повтор** (история снимками, до 90 шагов).
+* **Отмена/повтор** (история снимками, 90 шагов по умолчанию, до 500 в настройках).
 * **Палитра команд** (`Ctrl+K`) с поиском по всем действиям.
 * **Новый документ** (`Ctrl+N`): готовые размеры сцены по категориям (кино, веб, мобильные,
   квадрат), частота кадров и цвет фона.
 * **Настройки** (`Ctrl+,`): разделы с поиском, как в «Параметрах» Windows — язык интерфейса,
-  сетка, луковая кожа, рисование, графический планшет, автосохранение. Хранятся в
-  `%APPDATA%\MotionForge\settings.json`.
+  сетка, луковая кожа, рисование (стиль кисти, размер ластика, сглаживание, глубина отмены),
+  графический планшет, автосохранение, плагины. Хранятся в `%APPDATA%\MotionForge\settings.json`.
 * **Графический планшет**: перо обрабатывается отдельно от мыши, сила нажатия задаёт толщину
   линии (WPF `StylusPoint.PressureFactor`), перевёрнутое перо работает как ластик, касания
   пальцем можно игнорировать (защита от ладони).
@@ -350,8 +419,12 @@ compatibility.
   в настройках), показывает список изменений и ставит новую сборку само — скачивает архив,
   после выхода заменяет файлы и запускает приложение заново. Для ручной проверки есть
   «Помощь → Проверить обновления…».
-* Встроенная **самопроверка** (`--selftest`): 125 проверок ядра, геометрии, отмены,
-  сохранения/загрузки, локализации, настроек, обновлений и всех экспортёров.
+* Встроенная **самопроверка** (`--selftest`): 144 проверки ядра, геометрии, отмены,
+  сохранения/загрузки, локализации, настроек, кистей, ластика, склейки одинаковых кадров
+  спрайт-листа, плагинов, обновлений и всех экспортёров.
+* **Плагины**: достаточно положить папку в `Plugins\` — и пункт появится в меню «Плагины».
+  Плагин на Python (или любой другой программе) получает проект в JSON, меняет его и возвращает
+  результат. Полное руководство и готовые примеры — в [PLUGINS.md](PLUGINS.md).
 
 ### Экспорт
 | Формат | Что получается |
@@ -365,6 +438,37 @@ compatibility.
 XML спрайт-листа — формат Starling/Sparrow (`TextureAtlas`), его читают Phaser, PixiJS,
 плагины Unity и другие движки без конвертации: каждый кадр описан элементом `<SubTexture>`
 с именем и пиксельным прямоугольником, а размер листа и частота кадров — в корневом элементе.
+**Одинаковые кадры занимают одну ячейку атласа**: пиксели хешируются, дубликаты получают тот же
+`x`/`y`, пустых ячеек в листе нет, а атрибуты `frames` и `textures` в корне показывают, сколько
+кадров уложено в сколько ячеек.
+
+---
+
+## Плагины
+
+![Меню «Плагины»](docs/plugins.png)
+
+MotionForge расширяется без правки кода. Каждый плагин — папка рядом с программой:
+
+```
+Plugins\
+  stars\        «Звёздное небо» — добавляет случайные звёзды на текущий кадр
+    plugin.json
+    stars.py
+  outline\      «Жирная обводка» — обводит все фигуры текущего кадра
+  _template\    шаблон с комментариями: скопируйте, переименуйте, правьте
+```
+
+В `plugin.json` задаются название, описание, ограничение времени и скрипт. Программа запускает
+`python <скрипт> --input project.json --output result.json --frame N`, плагин читает проект,
+меняет JSON и записывает обратно; изменения применяются одной операцией отмены. Всё, что плагин
+печатает (включая ошибки Python), показывается в окне отчёта. Писать плагины можно на Python
+или на любом языке, умеющем читать и писать JSON. Папки, начинающиеся с `_`, не загружаются,
+поэтому шаблон никогда не появляется в меню.
+
+Полное руководство, описание формата проекта и пошаговые инструкции — в
+**[PLUGINS.md](PLUGINS.md)** (по-русски и по-английски). В меню «Плагины» также есть «Открыть
+папку плагинов» и «Обновить список плагинов».
 
 ---
 
@@ -377,12 +481,13 @@ XML спрайт-листа — формат Starling/Sparrow (`TextureAtlas`), 
 
 | Раздел | Что настраивается |
 | --- | --- |
-| Общие | язык интерфейса, подсказки в строке состояния, вопрос при выходе с несохранёнными правками |
+| Общие | язык интерфейса, подсказки в строке состояния, вопрос при выходе с несохранёнными правками, проверка обновлений, заставка |
 | Сцена | сетка, шаг сетки, привязка новых фигур к сетке, показ только контуров |
 | Луковая кожа | включение, сколько кадров до и после |
-| Рисование | толщина линии, размер кисти, сглаживание линий |
+| Рисование | толщина линии, размер кисти, стиль кисти, размер ластика, сглаживание, глубина отмены |
 | Графический планшет | перо отдельно от мыши, сила нажатия → толщина линии, игнорирование касаний пальцем |
 | Автосохранение | интервал в минутах (`0` — выключить) |
+| Плагины | команда Python, открыть папку плагинов, перечитать список |
 
 Окно устроено как «Параметры» Windows: слева список разделов, сверху поиск по настройкам,
 справа — поля выбранного раздела и кнопка «Сбросить раздел». Внизу «ОК» (применить и закрыть),
@@ -491,6 +596,7 @@ dotnet run -c Release -- --selftest
 | --- | --- |
 | `--selftest` | прогнать проверки и выйти |
 | `--lang-template` | выгрузить все строки интерфейса в шаблон перевода и выйти |
+| `--export-icon <путь>` | отрисовать значок приложения (многоразмерный `.ico`) и выйти |
 | `--prefs` | открыть окно настроек сразу после запуска (удобно для снимков экрана) |
 | `--newdoc` | открыть окно «Новый документ» сразу после запуска |
 
@@ -547,8 +653,10 @@ MotionForge/
 ├─ Tools/                        инструменты рисования и выделения
 ├─ Views/                        сцена, таймлайн, панели, диалоги, элементы UI
 ├─ Localization/                 таблицы переводов (en.json, de.json, fr.json, …)
-├─ Assets/app.ico                значок приложения
-└─ docs/                         снимки окна, настроек и нового документа
+├─ Plugins/                      примеры плагинов (звёздное небо, обводка, шаблон)
+├─ Assets/app.ico                значок приложения (градиент + белый орёл)
+├─ PLUGINS.md                    руководство по плагинам: протокол, формат проекта, примеры
+└─ docs/                         снимки окна, настроек, нового документа и плагинов
 ```
 
 Модель документа не зависит от WPF: её можно использовать в тестах и консольных сценариях
@@ -565,11 +673,21 @@ MotionForge/
 
 ## Лицензия
 
-[MIT](LICENSE).
+**[PolyForm Noncommercial 1.0.0](LICENSE)** — исходный код открыт, программа бесплатна для
+личного, учебного, хобби- и другого некоммерческого использования. Код можно читать, изменять
+и распространять, но **продавать MotionForge, включать его в платные продукты или использовать
+в коммерческой деятельности можно только с письменного разрешения автора**. Копии и изменённые
+версии должны сохранять уведомление об авторстве и ссылку на лицензию. Версии до 1.1.0
+выходили под MIT; для уже полученных копий это разрешение не отзывается, а на 1.2.0 и новее
+действует новая лицензия.
+
+Почему изменилось: MIT разрешает кому угодно перепродавать программу как свой продукт. Проект
+задуман бесплатным, поэтому лицензия защищает его от платных перезаливок и коммерческой
+перепродажи, оставляя код открытым для изучения и участия.
 
 ## Отказ от ответственности
 
-MotionForge — самостоятельный открытый проект. Он не связан с Adobe, не использует её код,
+MotionForge — самостоятельный проект. Он не связан с Adobe, не использует её код,
 ресурсы или иконки. Adobe и Adobe Animate — товарные знаки Adobe Inc. Названия форматов
 (GIF, PNG, SVG) принадлежат их правообладателям и упомянуты только для описания
 совместимости.

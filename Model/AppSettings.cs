@@ -29,7 +29,11 @@ public class AppSettings
     /* --- рисование --- */
     public double StrokeWidth = 1;
     public double BrushSize = 16;
+    public double EraserSize = 28;            // диаметр ластика в экранных пикселях
     public bool SmoothStrokes = true;         // сглаживание линий по умолчанию
+    public string BrushPreset = "brush";      // кисть по умолчанию: pencil | brush | marker | calligraphy | airbrush
+    public double Smoothing = 50;             // сила сглаживания штриха, 0…100
+    public int UndoLimit = 90;                // глубина истории отмены
 
     /* --- служебное --- */
     /// <summary>Версия формата файла настроек: нужна для разовых миграций (0 — файл до 1.0.1).</summary>
@@ -47,6 +51,12 @@ public class AppSettings
 
     /* --- автосохранение --- */
     public int AutosaveMinutes = 1;           // 0 — выключено
+
+    /* --- оформление --- */
+    public bool ShowSplash = true;            // показывать заставку при запуске
+
+    /* --- плагины --- */
+    public string PythonPath = "python";      // команда запуска Python для плагинов
 
     /// <summary>Текущие настройки приложения (загружаются один раз при запуске).</summary>
     [System.Text.Json.Serialization.JsonIgnore]
@@ -98,6 +108,11 @@ public class AppSettings
         OnionAfter = Math.Max(0, Math.Min(5, OnionAfter));
         StrokeWidth = Math.Max(0.1, Math.Min(200, StrokeWidth));
         BrushSize = Math.Max(1, Math.Min(400, BrushSize));
+        EraserSize = Math.Max(4, Math.Min(400, EraserSize));
+        Smoothing = Math.Max(0, Math.Min(100, Smoothing));
+        UndoLimit = Math.Max(10, Math.Min(500, UndoLimit));
+        if (string.IsNullOrWhiteSpace(BrushPreset)) BrushPreset = "brush";
+        if (string.IsNullOrWhiteSpace(PythonPath)) PythonPath = "python";
         AutosaveMinutes = Math.Max(0, Math.Min(60, AutosaveMinutes));
         return this;
     }

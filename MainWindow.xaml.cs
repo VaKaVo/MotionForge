@@ -44,14 +44,14 @@ public partial class MainWindow : Window, IAppShell
     private static readonly string[] MenuOrder =
     {
         "Файл", "Правка", "Вид", "Вставка", "Изменение", "Выравнивание",
-        "Слои", "Воспроизведение", "Окно", "Помощь",
+        "Слои", "Воспроизведение", "Окно", "Плагины", "Помощь",
     };
 
     private static readonly HashSet<string> SeparatorBefore = new HashSet<string>
     {
         "file.import", "edit.copy", "edit.duplicate", "edit.selectAll", "frame.key", "frame.tween",
         "mod.symbol", "mod.front", "mod.flipH", "mod.alignLeft", "mod.distributeH",
-        "layer.toggleVisible", "view.zoomIn", "view.play", "win.tools", "help.palette",
+        "layer.toggleVisible", "view.zoomIn", "view.play", "win.tools", "help.palette", "plugin.list",
     };
 
     private static readonly HashSet<string> AllowedWhileTyping = new HashSet<string>
@@ -164,7 +164,12 @@ public partial class MainWindow : Window, IAppShell
 
         _store.Opts.StrokeWidth = settings.StrokeWidth;
         _store.Opts.BrushSize = settings.BrushSize;
+        _store.Opts.EraserSize = Math.Max(4, settings.EraserSize);
         _store.Opts.FreehandSmooth = settings.SmoothStrokes;
+        _store.Opts.BrushPreset = string.IsNullOrEmpty(settings.BrushPreset) ? "brush" : settings.BrushPreset;
+        _store.Opts.Smoothing = Math.Max(0, Math.Min(100, settings.Smoothing));
+        Store.UndoLimit = Math.Max(10, Math.Min(500, settings.UndoLimit));
+        Plugins.PythonCommand = string.IsNullOrWhiteSpace(settings.PythonPath) ? "python" : settings.PythonPath.Trim();
 
         _store.OnionOn = settings.OnionOn;
         _store.OnionBefore = settings.OnionBefore;
@@ -249,6 +254,9 @@ public partial class MainWindow : Window, IAppShell
 
     private void BuildMenu()
     {
+        // Названия плагинов зависят от языка интерфейса — перечитываем список при сборке меню.
+        Commands.LoadPluginCommands();
+
         var groups = new List<string>();
         foreach (string group in MenuOrder)
             if (Commands.All.Any(c => c.Group == group)) groups.Add(group);
@@ -994,6 +1002,43 @@ public partial class MainWindow : Window, IAppShell
     public void ShowAbout()
     {
         new AboutWindow { Owner = this }.ShowDialog();
+        Stage.Focus();
+    }
+
+    /* --------------------------- плагины ------------------------------ */
+
+    /// <summary>Запуск плагина из меню «Плагины».</summary>
+    public void RunPlugin(string id)
+    {
+        PluginInfo plugin = Plugins.Cache.FirstOrDefault(p => p.Id == id) ?? Plugins.Load().FirstOrDefault(p => p.Id == id);
+        if (plugin == null)
+        {
+            Store.Report(L10n.T("Плагин не найден"));
+            return;
+        }
+        if (!plugin.Ready)
+        {
+            new LogWindow(plugin.Title, plugin.Error, true) { Owner = this }.ShowDialog();
+            return;
+        }
+
+        Project changed = Plugins.Run(plugin, _store.Project, _store.Playhead, out string log);
+        if (changed != null)
+        {
+            _store.ApplyProject(changed, "Плагин: " + plugin.Title);
+            RefreshAll();
+            Store.Report(string.Format(L10n.T("Плагин «{0}» выполнен"), plugin.Title));
+        }
+
+        // Показываем отчёт, если есть что показать (ошибка или вывод скрипта).
+        if (changed == null || !string.IsNullOrWhiteSpace(log))
+            new LogWindow(plugin.Title, log, changed == null) { Owner = this }.ShowDialog();
+        Stage.Focus();
+    }
+
+    public void ShowPlugins()
+    {
+        new PluginsWindow { Owner = this }.ShowDialog();
         Stage.Focus();
     }
 
