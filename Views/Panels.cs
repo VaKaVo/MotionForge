@@ -319,7 +319,14 @@ public class PropertiesPanel : StackPanel
             case "eraser":
                 panel.Children.Add(UiKit.PropRow("Размер", 74,
                     UiKit.Number(opts.EraserSize, v => opts.EraserSize = Math.Max(4, Math.Min(400, v)), 1, 56, 4, 400)));
-                panel.Children.Add(UiKit.Hint("Ластик режет штрихи на части. Alt + щелчок удаляет объект целиком."));
+                panel.Children.Add(UiKit.PropRow("Режим", 74, UiKit.Combo(new[]
+                {
+                    ("normal", L10n.T("Обычный")),
+                    ("fills", L10n.T("Только заливка")),
+                    ("lines", L10n.T("Только линии")),
+                }, string.IsNullOrEmpty(opts.EraserMode) ? "normal" : opts.EraserMode,
+                    v => opts.EraserMode = v, 150)));
+                panel.Children.Add(UiKit.Hint("Стирает ровно под курсором. Alt + щелчок удаляет объект целиком."));
                 break;
 
             case "text":

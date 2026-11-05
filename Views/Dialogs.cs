@@ -1189,6 +1189,13 @@ public class SettingsDialog : DialogBase
                     v => _draft.BrushPreset = v,
                     200));
                 Row(host, "Размер ластика", UiKit.Number(_draft.EraserSize, v => _draft.EraserSize = v, 1, 78, 4, 400));
+                Row(host, "Режим ластика", UiKit.Combo(new List<(string, string)>
+                {
+                    ("normal", L10n.T("Обычный")),
+                    ("fills", L10n.T("Только заливка")),
+                    ("lines", L10n.T("Только линии")),
+                }, string.IsNullOrEmpty(_draft.EraserMode) ? "normal" : _draft.EraserMode,
+                    v => _draft.EraserMode = v, 200));
                 Row(host, "Сглаживание штриха", UiKit.Number(_draft.Smoothing, v => _draft.Smoothing = v, 1, 78, 0, 100));
                 Row(host, "Глубина отмены", UiKit.Number(_draft.UndoLimit, v => _draft.UndoLimit = (int)Math.Round(v), 1, 78, 10, 500));
                 Check(host, "Сглаживать линии карандаша и кисти", _draft.SmoothStrokes, v => _draft.SmoothStrokes = v);
@@ -1200,6 +1207,7 @@ public class SettingsDialog : DialogBase
                 s.BrushSize = 16;
                 s.BrushPreset = "brush";
                 s.EraserSize = 28;
+                s.EraserMode = "normal";
                 s.Smoothing = 50;
                 s.UndoLimit = 90;
                 s.SmoothStrokes = true;

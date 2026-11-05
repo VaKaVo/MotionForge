@@ -25,8 +25,8 @@ other non-commercial use; see [License](#license).
 * Insert and remove frames, blank frames and keyframes, delete a keyframe.
 
 ### Drawing
-* Tools: selection, subselection (nodes), free transform, line, rectangle, ellipse, pencil, brush,
-  pen (curves), text, fill, eraser, eyedropper, hand (pan), zoom.
+* Tools: selection, subselection (nodes), lasso, free transform, line, rectangle, ellipse, pencil,
+  brush, pen (curves), text, fill, eraser, eyedropper, hand (pan), zoom.
 * Colour: fill and stroke, stroke width, a 216-colour web-safe palette, default swatches, quick
   swap and reset.
 * Colour picker with an **HSV wheel** (hue by angle, saturation by radius), brightness, R/G/B
@@ -35,17 +35,22 @@ other non-commercial use; see [License](#license).
 * Text with font, size, weight and alignment.
 * Grouping, stacking order, flip, rotate, align and distribute objects.
 * Snap to grid, modifier keys while drawing (Shift/Alt).
-* Smooth freehand strokes: the path is fitted with a Catmull-Rom curve, and pressure profiles are
-  drawn as a continuous ribbon, so a line never breaks apart where it crosses itself.
+* Smooth freehand strokes: fast, jerky movement no longer breaks the line. The centreline is fitted
+  with a **centripetal** Catmull-Rom curve (no loops or spikes on sharp turns), resampled with a
+  uniform step before the ribbon is built, offset with a miter limit and lightly stabilised; a
+  self-crossing stroke is filled with the non-zero rule, so it never gets holes.
 * **Five brush styles** — pencil, brush, marker (flat caps, slight transparency), calligraphy
   (width depends on the stroke direction and nib angle) and airbrush (soft halo around a solid
   core). The style lives on each element and is saved with the project.
-* **Eraser that really erases**: it cuts a stroke into separate pieces instead of moving it,
-  removes closed shapes whole (their fill cannot be split without a re-fill) and deletes an
-  object entirely with `Alt`+click. The eraser path is interpolated between mouse events, so fast
-  swipes leave no untouched gaps.
-* One precise cursor on the stage: for the pencil, brush and eraser the system arrow is hidden and
-  a double-contrast ring (with a crosshair) is drawn instead — no "two cursors" effect.
+* **Eraser that erases exactly where you drag**: instead of cutting the object into pieces, the
+  eraser stores a mask on the element — what is under the cursor disappears, everything else stays
+  one object. It works on brush strokes and outlines, and leaves real holes in filled shapes. Three
+  Animate-style modes: normal, **fills only** and **lines only**. `Alt`+click deletes the whole
+  object. The eraser path is interpolated between mouse events, so fast swipes leave no gaps.
+* **Lasso** (`L`): draw around an area to select every object inside it; `Shift` adds to the
+  current selection.
+* One precise cursor on the stage: for the pencil, brush, eraser and lasso the system arrow is hidden
+  and a double-contrast ring (with a crosshair) is drawn instead — no "two cursors" effect.
 * Images: `Ctrl+I` imports a file; `Ctrl+V` pastes a screenshot or an image copied in Explorer, and
   repeated pastes cascade instead of covering each other.
 
@@ -70,7 +75,7 @@ other non-commercial use; see [License](#license).
   settings), shows what's new and installs the new build itself — downloads the archive,
   replaces the files after exiting and starts again. There's also «Help → Check for
   Updates…» for a manual check.
-* Built-in **self-test** (`--selftest`): 144 checks covering the core, geometry, undo, save and
+* Built-in **self-test** (`--selftest`): 153 checks covering the core, geometry, undo, save and
   load, localisation, settings, brushes, the eraser, sprite-sheet deduplication, plugins, updates
   and every exporter.
 * **Plugins**: drop a folder into `Plugins\` and it appears in the `Plugins` menu — Python (or any
@@ -136,7 +141,7 @@ The **Edit → Settings…** dialog (`Ctrl+,`) keeps everything in one place:
 | General | interface language, status bar hints, asking before closing with unsaved changes, update check, splash screen |
 | Stage | grid, grid step, snap new shapes to the grid, outline-only view |
 | Onion skin | on/off, how many frames before and after |
-| Drawing | default stroke width, brush size, brush style, eraser size, stroke smoothing, undo depth |
+| Drawing | default stroke width, brush size, brush style, eraser size, eraser mode, stroke smoothing, undo depth |
 | Graphics tablet | pen separate from the mouse, pressure → stroke width, ignore finger touches |
 | Autosave | interval in minutes (`0` turns it off) |
 | Plugins | Python command, open the plugins folder, re-scan for plugins |
@@ -293,7 +298,7 @@ Development and documentation flags:
 | Panels: tools / properties / library | `Ctrl+F2` / `Ctrl+F3` / `Ctrl+L` |
 | Settings / command palette / hotkeys | `Ctrl+,` / `Ctrl+K` / `F1` |
 
-Tools switch with a single letter: `V` selection, `A` nodes, `Q` free transform, `N` line,
+Tools switch with a single letter: `V` selection, `A` nodes, `L` lasso, `Q` free transform, `N` line,
 `R` rectangle, `O` ellipse, `Y` pencil, `B` brush, `P` pen, `T` text, `K` fill, `E` eraser,
 `I` eyedropper, `H` hand, `Z` zoom.
 
@@ -390,7 +395,7 @@ compatibility.
 * Вставка/удаление кадров, пустые и ключевые кадры, удаление ключа.
 
 ### Рисование
-* Инструменты: выделение, частичное выделение (узлы), свободное трансформирование, линия,
+* Инструменты: выделение, частичное выделение (узлы), лассо, свободное трансформирование, линия,
   прямоугольник, овал, карандаш, кисть, перо (кривые), текст, заливка, ластик, пипетка,
   рука (панорама), масштаб.
 * Работа с цветом: заливка и обводка, толщина, палитра из 216 веб-безопасных образцов,
@@ -401,17 +406,23 @@ compatibility.
 * Текст с выбором шрифта, размера, начертания и выравнивания.
 * Группировка, порядок наложения, отражение, поворот, выравнивание и распределение объектов.
 * Привязка к сетке, автодополнение помощников при рисовании (Shift/Alt).
-* Ровные росчерки: линия сглаживается кривой Catmull-Rom, а профиль нажима рисуется сплошной
-  «лентой» — штрих не разрывается там, где он пересекает сам себя.
+* Ровные росчерки: быстрые и резкие движения больше не ломают линию. Осевая линия сглаживается
+  **центростремительной** кривой Catmull-Rom (без петель и выбросов на резких поворотах),
+  пересэмплируется с постоянным шагом, смещается с ограничением miter и слегка стабилизируется;
+  самопересечения заливаются по правилу non-zero, поэтому дырок в штрихе не бывает.
 * **Пять стилей кисти** — карандаш, кисть, маркер (плоские торцы, лёгкая прозрачность),
   каллиграфия (толщина зависит от направления штриха и угла пера) и аэрограф (мягкое свечение
   вокруг плотного ядра). Стиль хранится у объекта и сохраняется вместе с проектом.
-* **Ластик, который действительно стирает**: он разрезает штрих на отдельные куски, а не сдвигает
-  его, замкнутые фигуры удаляет целиком (их заливку нельзя разрезать без пересчёта) и удаляет
-  объект полностью по `Alt`+щелчку. Между событиями мыши путь ластика достраивается, поэтому
-  быстрые движения не оставляют нетронутых участков.
-* Один точный курсор на сцене: для карандаша, кисти и ластика системная стрелка скрыта, вместо неё
-  рисуется кольцо с двойным контрастом и перекрестием — эффекта «двух курсоров» нет.
+* **Ластик, который стирает ровно там, где ведёшь**: вместо разрезания объекта на куски он хранит
+  у объекта маску — исчезает то, что под курсором, а всё остальное остаётся одним объектом.
+  Работает по штрихам и обводкам и оставляет настоящие дырки в заливках. Три режима, как в Animate:
+  обычный, **только заливка** и **только линии**. `Alt`+щелчок по-прежнему удаляет объект целиком.
+  Между событиями мыши путь ластика достраивается, поэтому быстрые движения не оставляют
+  нетронутых участков.
+* **Лассо** (`L`): обведите область — выделятся все объекты внутри; `Shift` добавляет к текущему
+  выделению.
+* Один точный курсор на сцене: для карандаша, кисти, ластика и лассо системная стрелка скрыта,
+  вместо неё рисуется кольцо с двойным контрастом и перекрестием — эффекта «двух курсоров» нет.
 * Изображения: `Ctrl+I` импортирует файл, `Ctrl+V` вставляет скриншот или картинку, скопированную
   в проводнике; повторные вставки идут каскадом и не ложатся друг на друга.
 
@@ -436,7 +447,7 @@ compatibility.
   в настройках), показывает список изменений и ставит новую сборку само — скачивает архив,
   после выхода заменяет файлы и запускает приложение заново. Для ручной проверки есть
   «Помощь → Проверить обновления…».
-* Встроенная **самопроверка** (`--selftest`): 144 проверки ядра, геометрии, отмены,
+* Встроенная **самопроверка** (`--selftest`): 153 проверки ядра, геометрии, отмены,
   сохранения/загрузки, локализации, настроек, кистей, ластика, склейки одинаковых кадров
   спрайт-листа, плагинов, обновлений и всех экспортёров.
 * **Плагины**: достаточно положить папку в `Plugins\` — и пункт появится в меню «Плагины».
@@ -501,7 +512,7 @@ Plugins\
 | Общие | язык интерфейса, подсказки в строке состояния, вопрос при выходе с несохранёнными правками, проверка обновлений, заставка |
 | Сцена | сетка, шаг сетки, привязка новых фигур к сетке, показ только контуров |
 | Луковая кожа | включение, сколько кадров до и после |
-| Рисование | толщина линии, размер кисти, стиль кисти, размер ластика, сглаживание, глубина отмены |
+| Рисование | толщина линии, размер кисти, стиль кисти, размер ластика, режим ластика, сглаживание, глубина отмены |
 | Графический планшет | перо отдельно от мыши, сила нажатия → толщина линии, игнорирование касаний пальцем |
 | Автосохранение | интервал в минутах (`0` — выключить) |
 | Плагины | команда Python, открыть папку плагинов, перечитать список |
@@ -658,7 +669,7 @@ dotnet run -c Release -- --selftest
 | Панели: инструменты / свойства / библиотека | `Ctrl+F2` / `Ctrl+F3` / `Ctrl+L` |
 | Настройки / палитра команд / горячие клавиши | `Ctrl+,` / `Ctrl+K` / `F1` |
 
-Инструменты переключаются одной буквой: `V` выделение, `A` узлы, `Q` трансформирование,
+Инструменты переключаются одной буквой: `V` выделение, `A` узлы, `L` лассо, `Q` трансформирование,
 `N` линия, `R` прямоугольник, `O` овал, `Y` карандаш, `B` кисть, `P` перо, `T` текст,
 `K` заливка, `E` ластик, `I` пипетка, `H` рука, `Z` масштаб.
 

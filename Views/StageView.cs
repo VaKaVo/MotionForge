@@ -174,7 +174,7 @@ public class StageView : Canvas
 
         // курсор инструмента (ластик/кисть): системный курсор скрыт, чтобы не было «двух» стрелок
         string tool = Store.ToolId;
-        bool precise = tool == "eraser" || tool == "brush" || tool == "pencil";
+        bool precise = tool == "eraser" || tool == "brush" || tool == "pencil" || tool == "lasso";
         if (_hasMouse && !_panning && !_spaceDown && precise)
         {
             Vec world = ToWorld(_mouseScreen);
@@ -532,7 +532,7 @@ public class StageView : Canvas
     {
         if (_panning || _spaceDown) { Cursor = Cursors.SizeAll; return; }
         string tool = Store?.ToolId;
-        Cursor = tool == "eraser" || tool == "brush" || tool == "pencil" ? Cursors.None : Cursors.Arrow;
+        Cursor = tool == "eraser" || tool == "brush" || tool == "pencil" || tool == "lasso" ? Cursors.None : Cursors.Arrow;
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

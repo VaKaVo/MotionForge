@@ -757,6 +757,8 @@ public class FreehandTool : Tool
     private readonly List<Vec> _points = new List<Vec>();
     private readonly List<double> _widths = new List<double>();
     private double _baseWidth = 1;
+    private Vec _steady;
+    private bool _steadySet;
 
     public FreehandTool(bool brush) { _brush = brush; }
 
@@ -778,6 +780,8 @@ public class FreehandTool : Tool
         // на самом первом событии отдают нажатие 0 (или 1) — из-за этого в начале
         // штриха появлялась огромная «клякса».
         _widths.Add(double.NaN);
+        _steady = p;
+        _steadySet = true;
         Dragging = true;
         ctx.Redraw();
     }
@@ -785,11 +789,24 @@ public class FreehandTool : Tool
     public override void Move(ToolContext ctx, Vec p)
     {
         if (!Dragging) return;
+
+        // Стабилизатор: точка «догоняет» курсор, гася дрожание. Сила — из настройки
+        // «Сглаживание», но не больше трети, иначе кисть заметно отстаёт.
+        double smoothing = Math.Max(0, Math.Min(100, ctx.Store.Opts.Smoothing));
+        double lag = 0.35 * smoothing / 100.0;
+        if (_steadySet && lag > 0)
+            _steady = new Vec(_steady.X + (p.X - _steady.X) * (1 - lag),
+                              _steady.Y + (p.Y - _steady.Y) * (1 - lag));
+        else
+            _steady = p;
+
         Vec last = _points[_points.Count - 1];
-        if (Math.Sqrt(Math.Pow(p.X - last.X, 2) + Math.Pow(p.Y - last.Y, 2)) < 0.8 * ctx.Px) return;
+        double dx = _steady.X - last.X, dy = _steady.Y - last.Y;
+        if (Math.Sqrt(dx * dx + dy * dy) < 0.7 * ctx.Px) return;
+
         double width = _baseWidth * ctx.PressureScale;
         if (double.IsNaN(_widths[0])) _widths[0] = width;
-        _points.Add(p);
+        _points.Add(_steady);
         _widths.Add(width);
         ctx.Redraw();
     }
@@ -798,6 +815,19 @@ public class FreehandTool : Tool
     {
         if (!Dragging) return;
         Dragging = false;
+
+        // Стабилизатор мог не догнать курсор — доводим штрих до точки отпускания.
+        if (_points.Count > 0)
+        {
+            Vec last = _points[_points.Count - 1];
+            double dx = p.X - last.X, dy = p.Y - last.Y;
+            if (Math.Sqrt(dx * dx + dy * dy) > 0.4 * ctx.Px)
+            {
+                _points.Add(p);
+                _widths.Add(double.IsNaN(_widths[_widths.Count - 1]) ? _baseWidth : _widths[_widths.Count - 1]);
+            }
+        }
+
         if (_points.Count == 1)
         {
             // Одиночный щелчок — точка-«капля» толщиной кисти.
@@ -1066,13 +1096,14 @@ public class BucketTool : Tool
 
 public class EraserTool : Tool
 {
+    private readonly Dictionary<ShapeElement, ErasePath> _paths = new Dictionary<ShapeElement, ErasePath>();
     private bool _changed;
     private Vec _lastPoint;
     private bool _hasLast;
 
     public override string Id => "eraser";
     public override string Title => "Ластик";
-    public override string Hint => "Режет штрихи на части. Alt — удалить объект целиком, размер — в параметрах инструмента.";
+    public override string Hint => "Стирает ровно там, где вы ведёте: остаётся «дырка» прямо под курсором. Alt — удалить объект целиком, режим — в параметрах инструмента.";
 
     /// <summary>Радиус ластика в мировых единицах.</summary>
     private double Radius(ToolContext ctx) =>
@@ -1083,6 +1114,7 @@ public class EraserTool : Tool
         Dragging = true;
         _changed = false;
         _hasLast = false;
+        _paths.Clear();
         EraseAt(ctx, p);
         _lastPoint = p;
         _hasLast = true;
@@ -1101,7 +1133,7 @@ public class EraserTool : Tool
             double dx = p.X - _lastPoint.X;
             double dy = p.Y - _lastPoint.Y;
             double distance = Math.Sqrt(dx * dx + dy * dy);
-            int steps = (int)Math.Min(96, Math.Max(1, Math.Ceiling(distance / Math.Max(0.5, radius * 0.4))));
+            int steps = (int)Math.Min(400, Math.Max(1, Math.Ceiling(distance / Math.Max(0.35, radius * 0.25))));
             for (int i = 1; i <= steps; i++)
             {
                 double t = i / (double)steps;
@@ -1123,12 +1155,22 @@ public class EraserTool : Tool
         if (!Dragging) return;
         Dragging = false;
         _hasLast = false;
-        if (_changed)
+        _paths.Clear();
+        if (!_changed) return;
+        _changed = false;
+
+        // Объект, который стёрли целиком, держать в документе незачем.
+        var kf = ctx.Store.ActiveKeyframe;
+        if (kf != null)
         {
-            _changed = false;
-            ctx.Store.Commit("Ластик");
-            ctx.Store.RaiseAll();
+            foreach (var shape in Shapes(kf.Elements).ToList())
+            {
+                if (shape.HasErase && FullyErased(shape)) RemoveFrom(kf.Elements, shape);
+            }
         }
+
+        ctx.Store.Commit("Ластик");
+        ctx.Store.RaiseAll();
     }
 
     private void EraseAt(ToolContext ctx, Vec p)
@@ -1136,6 +1178,7 @@ public class EraserTool : Tool
         var store = ctx.Store;
         var kf = store.ActiveKeyframe;
 
+        // Alt — по-прежнему «удалить объект целиком».
         if (ctx.Alt)
         {
             var hit = store.HitTest(p, 4 * ctx.Px, out Element leaf);
@@ -1149,12 +1192,16 @@ public class EraserTool : Tool
 
         if (kf == null) return;
         double radius = Radius(ctx);
+        string mode = string.IsNullOrEmpty(store.Opts.EraserMode) ? "normal" : store.Opts.EraserMode;
 
-        // Обходим с конца: при разрезании элемента список меняется.
-        for (int index = kf.Elements.Count - 1; index >= 0; index--)
+        foreach (var shape in Shapes(kf.Elements))
         {
-            if (!(kf.Elements[index] is ShapeElement shape)) continue;
-            if (shape.Locked || shape.Points == null || shape.Points.Count == 0) continue;
+            if (shape.Locked || !shape.Visible || shape.Points == null || shape.Points.Count == 0) continue;
+
+            bool filledShape = shape.Closed && shape.Filled;
+            bool strokedShape = shape.Stroked || !string.IsNullOrEmpty(shape.Brush) || shape.Widths != null;
+            if (mode == "fills" && !filledShape) continue;
+            if (mode == "lines" && !strokedShape) continue;
 
             Mat matrix = store.WorldMatrix(shape);
             if (!matrix.TryInvert(out Mat inv)) continue;
@@ -1163,97 +1210,97 @@ public class EraserTool : Tool
             double scale = Math.Sqrt(Math.Abs(matrix.A * matrix.D - matrix.B * matrix.C));
             double localRadius = radius / Math.Max(0.02, scale);
 
-            if (shape.Points.Count == 1)
+            if (mode == "fills")
             {
-                if (Distance(local, shape.Points[0]) <= localRadius)
-                {
-                    kf.Elements.RemoveAt(index);
-                    _changed = true;
-                }
+                // «Только заливка»: стираем внутри фигуры, контур не трогаем.
+                if (!Geo.PointInPolygon(local, shape.Points)) continue;
+            }
+            else if (!TouchesShape(shape, local, localRadius, mode == "lines"))
+            {
                 continue;
             }
 
-            // Замкнутые фигуры (прямоугольники, эллипсы, заливки) стираются целиком:
-            // разрезать замкнутый контур на части без пересчёта заливки нельзя.
-            if (shape.Closed)
+            if (!_paths.TryGetValue(shape, out ErasePath path))
             {
-                if (Touches(shape.Points, true, local, localRadius))
-                {
-                    kf.Elements.RemoveAt(index);
-                    _changed = true;
-                }
-                continue;
+                path = new ErasePath { Radius = localRadius };
+                if (shape.Erase == null) shape.Erase = new List<ErasePath>();
+                shape.Erase.Add(path);
+                _paths[shape] = path;
             }
 
-            int count = shape.Points.Count;
-            var keep = new bool[count - 1];
-            bool anyCut = false;
-            for (int i = 0; i < count - 1; i++)
-            {
-                keep[i] = DistanceToSegment(local, shape.Points[i], shape.Points[i + 1]) > localRadius;
-                if (!keep[i]) anyCut = true;
-            }
-            if (!anyCut) continue;
-
-            // Собираем непрерывные куски уцелевших сегментов.
-            var runs = new List<(int start, int end)>();
-            int k = 0;
-            while (k < count - 1)
-            {
-                if (!keep[k]) { k++; continue; }
-                int start = k;
-                while (k < count - 1 && keep[k]) k++;
-                if (k - start >= 1) runs.Add((start, k));
-            }
-
-            if (runs.Count == 0)
-            {
-                kf.Elements.RemoveAt(index);
-                _changed = true;
-                continue;
-            }
-
-            var pieces = new List<Element>();
-            foreach (var run in runs)
-            {
-                var piece = (ShapeElement)shape.Clone();
-                piece.Id = Ids.New("el");
-                int length = run.end - run.start + 1;
-                piece.Points = shape.Points.GetRange(run.start, length);
-                if (shape.Widths != null && shape.Widths.Count == count)
-                    piece.Widths = shape.Widths.GetRange(run.start, length);
-                pieces.Add(piece);
-            }
-
-            kf.Elements.RemoveAt(index);
-            for (int i = 0; i < pieces.Count; i++) kf.Elements.Insert(index + i, pieces[i]);
+            // Точки следа храним с шагом ~трети радиуса: линия получается ровной,
+            // а данных немного.
+            double step = Math.Max(0.25, localRadius * 0.33);
+            if (path.Points.Count > 0 && Distance(path.Points[path.Points.Count - 1], local) < step) continue;
+            path.Points.Add(local);
             _changed = true;
         }
+    }
+
+    /// <summary>
+    /// Попадает ли точка (в координатах фигуры) в зону ластика.
+    /// Для заливок проверяется и внутренность, и контур.
+    /// </summary>
+    private static bool TouchesShape(ShapeElement shape, Vec p, double radius, bool outlineOnly)
+    {
+        double half = shape.Stroked ? Math.Max(0.5, shape.StrokeWidth * 0.5) : 0.5;
+        double reach = radius + half;
+
+        if (!outlineOnly && shape.Closed && shape.Filled && Geo.PointInPolygon(p, shape.Points)) return true;
+
+        var points = shape.Points;
+        for (int i = 0; i < points.Count - 1; i++)
+            if (Geo.DistToSegment(p, points[i], points[i + 1]) <= reach) return true;
+        if (shape.Closed && points.Count > 2 && Geo.DistToSegment(p, points[points.Count - 1], points[0]) <= reach) return true;
+        return false;
+    }
+
+    /// <summary>Все фигуры кадра, включая вложенные в группы.</summary>
+    private static IEnumerable<ShapeElement> Shapes(IList<Element> elements)
+    {
+        if (elements == null) yield break;
+        foreach (var element in elements)
+        {
+            if (element is ShapeElement shape) yield return shape;
+            else if (element is GroupElement group)
+                foreach (var child in Shapes(group.Children)) yield return child;
+        }
+    }
+
+    private static bool RemoveFrom(IList<Element> elements, Element target)
+    {
+        for (int i = 0; i < elements.Count; i++)
+        {
+            if (ReferenceEquals(elements[i], target)) { elements.RemoveAt(i); return true; }
+            if (elements[i] is GroupElement group && RemoveFrom(group.Children, target)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Весь контур фигуры покрыт следами ластика — объект можно удалять.</summary>
+    private static bool FullyErased(ShapeElement shape)
+    {
+        Geometry erase = Renderer.BuildEraseGeometry(shape.Erase);
+        if (erase == null) return false;
+        if (shape.Points.Count == 0) return true;
+
+        for (int i = 0; i < shape.Points.Count; i++)
+        {
+            var point = new Point(shape.Points[i].X, shape.Points[i].Y);
+            if (!erase.FillContains(point, 0.5, ToleranceType.Absolute)) return false;
+            if (i + 1 >= shape.Points.Count) continue;
+            var middle = new Point(
+                (shape.Points[i].X + shape.Points[i + 1].X) * 0.5,
+                (shape.Points[i].Y + shape.Points[i + 1].Y) * 0.5);
+            if (!erase.FillContains(middle, 0.5, ToleranceType.Absolute)) return false;
+        }
+        return true;
     }
 
     private static double Distance(Vec a, Vec b)
     {
         double dx = a.X - b.X, dy = a.Y - b.Y;
         return Math.Sqrt(dx * dx + dy * dy);
-    }
-
-    private static double DistanceToSegment(Vec p, Vec a, Vec b)
-    {
-        double dx = b.X - a.X, dy = b.Y - a.Y;
-        double length = dx * dx + dy * dy;
-        if (length < 1e-12) return Distance(p, a);
-        double t = ((p.X - a.X) * dx + (p.Y - a.Y) * dy) / length;
-        t = Math.Max(0, Math.Min(1, t));
-        return Distance(p, new Vec(a.X + dx * t, a.Y + dy * t));
-    }
-
-    private static bool Touches(IList<Vec> points, bool closed, Vec center, double radius)
-    {
-        for (int i = 0; i < points.Count - 1; i++)
-            if (DistanceToSegment(center, points[i], points[i + 1]) <= radius) return true;
-        if (closed && points.Count > 2)
-            return DistanceToSegment(center, points[points.Count - 1], points[0]) <= radius;
-        return false;
     }
 
     public override void DrawOverlay(DrawingContext dc, ToolContext ctx)
@@ -1338,6 +1385,105 @@ public class ZoomTool : Tool
     }
 }
 
+/// <summary>Лассо: обводим область и выделяем объекты, попавшие внутрь.</summary>
+public class LassoTool : Tool
+{
+    private readonly List<Vec> _points = new List<Vec>();
+
+    public override string Id => "lasso";
+    public override string Title => "Лассо";
+    public override string Hint => "Обведите область — объекты внутри выделятся. Shift — добавить к текущему выделению.";
+
+    public override void Down(ToolContext ctx, Vec p, bool rightButton)
+    {
+        _points.Clear();
+        _points.Add(p);
+        Dragging = true;
+        ctx.Redraw();
+    }
+
+    public override void Move(ToolContext ctx, Vec p)
+    {
+        if (!Dragging) return;
+        Vec last = _points[_points.Count - 1];
+        if (Math.Abs(p.X - last.X) + Math.Abs(p.Y - last.Y) < 1.2 * ctx.Px) return;
+        _points.Add(p);
+        ctx.Redraw();
+    }
+
+    public override void Up(ToolContext ctx, Vec p)
+    {
+        if (!Dragging) return;
+        Dragging = false;
+
+        if (_points.Count < 3)
+        {
+            if (!ctx.Shift) ctx.Store.ClearSelection();
+            _points.Clear();
+            ctx.Redraw();
+            return;
+        }
+
+        var selected = ctx.Shift ? ctx.Store.Selection.ToList() : new List<string>();
+        var kf = ctx.Store.ActiveKeyframe;
+        if (kf != null)
+        {
+            foreach (var element in kf.Elements)
+            {
+                if (!element.Visible || element.Locked) continue;
+                if (Inside(ctx.Store, element, _points) && !selected.Contains(element.Id))
+                    selected.Add(element.Id);
+            }
+        }
+
+        ctx.Store.SetSelection(selected);
+        _points.Clear();
+        ctx.Redraw();
+    }
+
+    public override void Cancel(ToolContext ctx)
+    {
+        Dragging = false;
+        _points.Clear();
+    }
+
+    private static bool Inside(Store store, Element element, IList<Vec> polygon)
+    {
+        Mat matrix = store.WorldMatrix(element);
+        if (element is ShapeElement shape)
+        {
+            foreach (var point in shape.Points)
+                if (Geo.PointInPolygon(matrix.Apply(point), polygon)) return true;
+            return false;
+        }
+        if (element is GroupElement group)
+        {
+            foreach (var child in group.Children)
+                if (Inside(store, child, polygon)) return true;
+            return false;
+        }
+        return Geo.PointInPolygon(matrix.Apply(Vec.Zero), polygon);
+    }
+
+    public override void DrawOverlay(DrawingContext dc, ToolContext ctx)
+    {
+        if (!Dragging || _points.Count < 2) return;
+        var geometry = new StreamGeometry();
+        using (StreamGeometryContext g = geometry.Open())
+        {
+            g.BeginFigure(new Point(_points[0].X, _points[0].Y), false, false);
+            for (int i = 1; i < _points.Count; i++)
+                g.LineTo(new Point(_points[i].X, _points[i].Y), true, false);
+            // Тянем пунктир к курсору — видно, что область ещё не замкнута.
+            g.LineTo(new Point(_points[0].X, _points[0].Y), true, false);
+        }
+        geometry.Freeze();
+        var pen = new Pen(Accent2Brush, 1.1 * ctx.Px) { DashStyle = new DashStyle(new double[] { 4, 3 }, 0) };
+        pen.Freeze();
+        dc.DrawGeometry(null, pen, geometry);
+    }
+}
+
 /// <summary>Реестр инструментов по идентификатору.</summary>
 public static class ToolRegistry
 {
@@ -1351,6 +1497,7 @@ public static class ToolRegistry
         Add(new SelectTool(false));
         Add(new SelectTool(true));
         Add(new SubSelectTool());
+        Add(new LassoTool());
         Add(new LineTool());
         Add(new RectTool());
         Add(new EllipseTool());

@@ -33,6 +33,7 @@ public class AppSettings
     public bool SmoothStrokes = true;         // сглаживание линий по умолчанию
     public string BrushPreset = "brush";      // кисть по умолчанию: pencil | brush | marker | calligraphy | airbrush
     public double Smoothing = 50;             // сила сглаживания штриха, 0…100
+    public string EraserMode = "normal";      // ластик: normal | fills | lines
     public int UndoLimit = 90;                // глубина истории отмены
 
     /* --- служебное --- */
@@ -112,6 +113,7 @@ public class AppSettings
         Smoothing = Math.Max(0, Math.Min(100, Smoothing));
         UndoLimit = Math.Max(10, Math.Min(500, UndoLimit));
         if (string.IsNullOrWhiteSpace(BrushPreset)) BrushPreset = "brush";
+        if (EraserMode != "fills" && EraserMode != "lines") EraserMode = "normal";
         if (string.IsNullOrWhiteSpace(PythonPath)) PythonPath = "python";
         AutosaveMinutes = Math.Max(0, Math.Min(60, AutosaveMinutes));
         return this;

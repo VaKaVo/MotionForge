@@ -438,14 +438,19 @@ public static class Exporter
         sb.AppendFormat(CultureInfo.InvariantCulture, "  <rect width=\"{0}\" height=\"{1}\" fill=\"{2}\"/>\n",
             Num.F(stage.Width, 2), Num.F(stage.Height, 2), bg);
 
+        var defs = new SvgDefs();
+        var body = new StringBuilder();
         foreach (var ev in Anim.EvaluateScene(project.Timeline, frame))
         {
             if (!ev.Src.Visible || ev.Alpha <= 0.01) continue;
-            sb.Append("  ");
-            WriteSvgElement(sb, ev, project);
-            sb.Append('\n');
+            body.Append("  ");
+            WriteSvgElement(body, ev, project, defs);
+            body.Append('\n');
         }
 
+        // Следы ластика вырезаются SVG-маской: белый фон, чёрные штрихи-«дырки».
+        if (defs.Text.Length > 0) sb.Append("  <defs>\n").Append(defs.Text).Append("  </defs>\n");
+        sb.Append(body);
         sb.Append("</svg>\n");
         return sb.ToString();
     }
@@ -455,7 +460,65 @@ public static class Exporter
         File.WriteAllText(path, BuildSvg(project, frame, transparent), new UTF8Encoding(false));
     }
 
-    private static void WriteSvgElement(StringBuilder sb, EvalElement ev, Project project)
+    private sealed class SvgDefs
+    {
+        public readonly StringBuilder Text = new StringBuilder();
+        public int Count;
+    }
+
+    /// <summary>SVG-маска, вырезающая следы ластика из фигуры.</summary>
+    private static string SvgEraseMask(SvgDefs defs, ShapeElement shape)
+    {
+        if (defs == null || !shape.HasErase) return "";
+        var points = shape.Points;
+        if (points == null || points.Count == 0) return "";
+
+        double pad = Math.Max(4, shape.StrokeWidth);
+        double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+        foreach (var p in points)
+        {
+            minX = Math.Min(minX, p.X); minY = Math.Min(minY, p.Y);
+            maxX = Math.Max(maxX, p.X); maxY = Math.Max(maxY, p.Y);
+        }
+        foreach (var path in shape.Erase)
+        {
+            pad = Math.Max(pad, path.Radius * 2 + 2);
+            foreach (var p in path.Points)
+            {
+                minX = Math.Min(minX, p.X); minY = Math.Min(minY, p.Y);
+                maxX = Math.Max(maxX, p.X); maxY = Math.Max(maxY, p.Y);
+            }
+        }
+        minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+
+        int id = ++defs.Count;
+        var sb = new StringBuilder();
+        sb.AppendFormat(CultureInfo.InvariantCulture,
+            "    <mask id=\"mf-erase-{0}\" maskUnits=\"userSpaceOnUse\" x=\"{1}\" y=\"{2}\" width=\"{3}\" height=\"{4}\">\n",
+            id, Num.F(minX, 2), Num.F(minY, 2), Num.F(Math.Max(1, maxX - minX), 2), Num.F(Math.Max(1, maxY - minY), 2));
+        sb.AppendFormat(CultureInfo.InvariantCulture,
+            "      <rect x=\"{0}\" y=\"{1}\" width=\"{2}\" height=\"{3}\" fill=\"white\"/>\n",
+            Num.F(minX, 2), Num.F(minY, 2), Num.F(Math.Max(1, maxX - minX), 2), Num.F(Math.Max(1, maxY - minY), 2));
+        foreach (var path in shape.Erase)
+        {
+            if (path.Points == null || path.Points.Count == 0) continue;
+            var d = new StringBuilder();
+            d.AppendFormat(CultureInfo.InvariantCulture, "M {0} {1}", Num.F(path.Points[0].X, 2), Num.F(path.Points[0].Y, 2));
+            for (int i = 1; i < path.Points.Count; i++)
+                d.AppendFormat(CultureInfo.InvariantCulture, " L {0} {1}", Num.F(path.Points[i].X, 2), Num.F(path.Points[i].Y, 2));
+            sb.AppendFormat(CultureInfo.InvariantCulture,
+                "      <path d=\"{0}\" fill=\"none\" stroke=\"black\" stroke-width=\"{1}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
+                d, Num.F(Math.Max(0.8, path.Radius * 2), 2));
+        }
+        sb.Append("    </mask>\n");
+        defs.Text.Append(sb);
+        return " mask=\"url(#mf-erase-" + id.ToString(CultureInfo.InvariantCulture) + ")\"";
+    }
+
+    private static void WriteSvgElement(StringBuilder sb, EvalElement ev, Project project) =>
+        WriteSvgElement(sb, ev, project, null);
+
+    private static void WriteSvgElement(StringBuilder sb, EvalElement ev, Project project, SvgDefs defs)
     {
         Mat m = ev.Matrix;
         string transform = string.Format(CultureInfo.InvariantCulture,
@@ -481,9 +544,10 @@ public static class Exporter
                 if (shape.Closed) d.Append(" Z");
                 string fill = shape.Filled && shape.Closed ? (ev.Fill ?? shape.Fill) : "none";
                 string stroke = shape.Stroked ? (ev.Stroke ?? shape.Stroke) : "none";
+                string mask = SvgEraseMask(defs, shape);
                 sb.AppendFormat(CultureInfo.InvariantCulture,
-                    "<path d=\"{0}\" fill=\"{1}\" stroke=\"{2}\" stroke-width=\"{3}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"{4}{5}/>",
-                    d, fill, stroke, Num.F(Math.Max(0.1, ev.StrokeWidth), 2), transform, opacity);
+                    "<path d=\"{0}\" fill=\"{1}\" stroke=\"{2}\" stroke-width=\"{3}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"{4}{5}{6}/>",
+                    d, fill, stroke, Num.F(Math.Max(0.1, ev.StrokeWidth), 2), transform, opacity, mask);
                 return;
             }
             case TextElement text:
@@ -517,7 +581,7 @@ public static class Exporter
             {
                 sb.AppendFormat("<g{0}{1}>", transform, opacity);
                 foreach (var child in group.Children)
-                    WriteSvgElement(sb, Anim.Build(child, ev.Layer), project);
+                    WriteSvgElement(sb, Anim.Build(child, ev.Layer), project, defs);
                 sb.Append("</g>");
                 return;
             }
@@ -527,7 +591,7 @@ public static class Exporter
                 {
                     sb.AppendFormat("<g{0}{1}>", transform, opacity);
                     foreach (var child in Anim.EvaluateScene(symbol.Timeline, 0))
-                        WriteSvgElement(sb, child, project);
+                        WriteSvgElement(sb, child, project, defs);
                     sb.Append("</g>");
                 }
                 return;

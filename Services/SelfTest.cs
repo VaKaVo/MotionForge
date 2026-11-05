@@ -236,7 +236,9 @@ public static class SelfTest
             Check("Команды: идентификаторы уникальны", ids.Count == ids.Distinct().Count(), ids.Count + " команд");
             Check("Команды: у всех есть действие", Commands.All.All(c => c.Run != null));
             Check("Команды: есть группы", Commands.GroupNames.Count() >= 6, string.Join(", ", Commands.GroupNames));
-            Check("Команды: инструменты зарегистрированы", Tools.ToolRegistry.All.Count() == 15);
+            Check("Команды: инструменты зарегистрированы",
+                Tools.ToolRegistry.All.Count() == 16 && Tools.ToolRegistry.Get("lasso").Id == "lasso",
+                Tools.ToolRegistry.All.Count() + " инструментов");
         }
         catch (Exception ex) { Check("Команды (исключение)", false, ex.Message); }
 
@@ -549,12 +551,12 @@ public static class SelfTest
                 wild.GridStep + " / " + wild.OnionBefore + " / " + wild.OnionAfter + " / " + wild.BrushSize + " / " + wild.AutosaveMinutes);
             Check("Пустой язык заменяется русским", new AppSettings { Language = "  " }.Normalized().Language == "ru");
 
-            var drawing = new AppSettings { EraserSize = 1, BrushPreset = "  ", Smoothing = 999, UndoLimit = 3, PythonPath = " " };
+            var drawing = new AppSettings { EraserSize = 1, EraserMode = "bogus", BrushPreset = "  ", Smoothing = 999, UndoLimit = 3, PythonPath = " " };
             drawing.Normalized();
             Check("Настройки рисования приводятся к норме",
-                drawing.EraserSize == 4 && drawing.BrushPreset == "brush" && drawing.Smoothing == 100 &&
+                drawing.EraserSize == 4 && drawing.EraserMode == "normal" && drawing.BrushPreset == "brush" && drawing.Smoothing == 100 &&
                 drawing.UndoLimit == 10 && drawing.PythonPath == "python",
-                drawing.EraserSize + " / " + drawing.BrushPreset + " / " + drawing.Smoothing + " / " +
+                drawing.EraserSize + " / " + drawing.EraserMode + " / " + drawing.BrushPreset + " / " + drawing.Smoothing + " / " +
                 drawing.UndoLimit + " / " + drawing.PythonPath);
 
             var round = Json.LoadObject<AppSettings>(Json.SaveObject(new AppSettings
@@ -627,23 +629,86 @@ public static class SelfTest
 
             var eraseStore = new Store(LineProject(out _));
             eraseStore.Opts.EraserSize = 40;      // радиус 20 при масштабе 100 %
+            eraseStore.Opts.EraserMode = "normal";
             eraseStore.Zoom = 1;
             var eraseCtx = new ToolContext { Store = eraseStore, Px = 1 };
             var eraser = new EraserTool();
             eraser.Down(eraseCtx, new Vec(200, 100), false);
             eraser.Up(eraseCtx, new Vec(200, 100));
 
-            var cutPieces = eraseStore.ActiveKeyframe.Elements.OfType<ShapeElement>().ToList();
-            Check("Ластик: штрих разрезан на две части", cutPieces.Count == 2,
-                cutPieces.Count + " куска");
-            bool leftEnd = cutPieces.Any(p => p.Points.Any(pt => pt.X <= 60));
-            bool rightEnd = cutPieces.Any(p => p.Points.Any(pt => pt.X >= 340));
-            Check("Ластик: куски сохранили начало и конец", leftEnd && rightEnd);
-            Check("Ластик: в месте стирания пусто",
-                cutPieces.All(p => p.Points.All(pt => Math.Abs(pt.X - 200) > 20)),
-                string.Join(" | ", cutPieces.Select(p => p.Points.Count + " точек")));
-            Check("Ластик: новые объекты получили свои Id",
-                cutPieces.Select(p => p.Id).Distinct().Count() == cutPieces.Count);
+            var erased = eraseStore.ActiveKeyframe.Elements.OfType<ShapeElement>().ToList();
+            Check("Ластик: штрих остаётся одним объектом", erased.Count == 1, erased.Count + " объектов");
+            var cut = erased.Count == 1 ? erased[0] : null;
+            Check("Ластик: след сохранён в объекте", cut != null && cut.HasErase && cut.Erase.Count == 1,
+                cut == null ? "нет объекта" : cut.Erase?.Count + " следов");
+            Check("Ластик: геометрия не тронута", cut != null && cut.Points.Count == 31,
+                cut == null ? "нет объекта" : cut.Points.Count + " точек");
+
+            var eraseGeometry = cut == null ? null : Renderer.BuildEraseGeometry(cut.Erase);
+            Check("Ластик: стирает ровно под курсором",
+                eraseGeometry != null &&
+                eraseGeometry.FillContains(new System.Windows.Point(200, 100), 0.5, System.Windows.Media.ToleranceType.Absolute) &&
+                !eraseGeometry.FillContains(new System.Windows.Point(120, 100), 0.5, System.Windows.Media.ToleranceType.Absolute),
+                eraseGeometry == null ? "нет геометрии" : "ok");
+
+            var erasedBitmap = Exporter.RenderFrame(eraseStore.Project, 0, 1, false);
+            var erasedPixels = new byte[erasedBitmap.PixelWidth * erasedBitmap.PixelHeight * 4];
+            erasedBitmap.CopyPixels(erasedPixels, erasedBitmap.PixelWidth * 4, 0);
+            byte ErasedPixel(int x, int y) => erasedPixels[(y * erasedBitmap.PixelWidth + x) * 4];
+            Check("Ластик: на отрисованном кадре видна дырка",
+                ErasedPixel(200, 100) > 240 && ErasedPixel(100, 100) < 40,
+                "центр " + ErasedPixel(200, 100) + ", край " + ErasedPixel(100, 100));
+
+            var eraseRound = Json.Load(Json.Save(eraseStore.Project)).Timeline.Layers[0].Frames[0].Elements[0] as ShapeElement;
+            Check("Следы ластика сохраняются в JSON",
+                eraseRound != null && eraseRound.HasErase && Math.Abs(eraseRound.Erase[0].Radius - 20) < 0.01,
+                eraseRound == null ? "нет объекта" : eraseRound.Erase?.Count + " следов");
+
+            // Быстрое движение с «прыжком» между событиями должно стирать всю траекторию.
+            eraseStore.Opts.EraserSize = 12;
+            var dragEraser = new EraserTool();
+            dragEraser.Down(eraseCtx, new Vec(44, 100), false);
+            dragEraser.Move(eraseCtx, new Vec(356, 100));
+            dragEraser.Up(eraseCtx, new Vec(356, 100));
+            Check("Ластик: быстрое движение стирает всю траекторию",
+                eraseStore.ActiveKeyframe.Elements.Count == 0,
+                eraseStore.ActiveKeyframe.Elements.Count + " объектов");
+
+            // Режим «только заливка» не трогает контур снаружи.
+            Project rectProject()
+            {
+                var p = new Project();
+                p.Stage.Width = 400; p.Stage.Height = 200;
+                var l = new Layer { Name = "Слой 1" };
+                var k = new Keyframe { Index = 0, Duration = 1 };
+                k.Elements.Add(new ShapeElement
+                {
+                    Points = Geo.RectPoints(200, 100),
+                    Closed = true, Smooth = false, Filled = true, Stroked = true,
+                    Fill = "#FF0000", Stroke = "#000000", StrokeWidth = 4,
+                    X = 100, Y = 50,
+                });
+                l.Frames.Add(k);
+                p.Timeline.Layers.Add(l);
+                return p;
+            }
+
+            var fillStore = new Store(rectProject());
+            fillStore.Opts.EraserSize = 20;
+            fillStore.Opts.EraserMode = "lines";
+            var fillCtx = new ToolContext { Store = fillStore, Px = 1 };
+            var lineOnly = new EraserTool();
+            lineOnly.Down(fillCtx, new Vec(200, 100), false);   // центр прямоугольника
+            lineOnly.Up(fillCtx, new Vec(200, 100));
+            var lineOnlyShape = fillStore.ActiveKeyframe.Elements.OfType<ShapeElement>().First();
+            Check("Ластик «только линии»: заливка не тронута", !lineOnlyShape.HasErase);
+
+            fillStore.Opts.EraserMode = "fills";
+            var fillOnly = new EraserTool();
+            fillOnly.Down(fillCtx, new Vec(200, 100), false);
+            fillOnly.Up(fillCtx, new Vec(200, 100));
+            var fillOnlyShape = fillStore.ActiveKeyframe.Elements.OfType<ShapeElement>().First();
+            Check("Ластик «только заливка»: дырка в заливке", fillOnlyShape.HasErase);
 
             var altStore = new Store(LineProject(out _));
             altStore.Opts.EraserSize = 40;
@@ -655,6 +720,40 @@ public static class SelfTest
                 altStore.ActiveKeyframe.Elements.Count + " объектов");
         }
         catch (Exception ex) { Check("Ластик (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
+
+        /* ---------- лассо ---------- */
+        try
+        {
+            var lassoProject = new Project();
+            lassoProject.Stage.Width = 500; lassoProject.Stage.Height = 400;
+            var lassoLayer = new Layer { Name = "Слой 1" };
+            var lassoKey = new Keyframe { Index = 0, Duration = 1 };
+            ShapeElement Square(double x, double y) => new ShapeElement
+            {
+                Points = Geo.RectPoints(60, 60), Closed = true, Smooth = false,
+                Filled = true, Stroked = false, Fill = "#FF0000", X = x, Y = y,
+            };
+            var first = Square(40, 40);
+            var second = Square(300, 250);
+            lassoKey.Elements.Add(first);
+            lassoKey.Elements.Add(second);
+            lassoLayer.Frames.Add(lassoKey);
+            lassoProject.Timeline.Layers.Add(lassoLayer);
+
+            var lassoStore = new Store(lassoProject);
+            var lasso = new LassoTool();
+            var lassoCtx = new ToolContext { Store = lassoStore, Px = 1 };
+            lasso.Down(lassoCtx, new Vec(20, 20), false);
+            lasso.Move(lassoCtx, new Vec(140, 20));
+            lasso.Move(lassoCtx, new Vec(140, 140));
+            lasso.Move(lassoCtx, new Vec(20, 140));
+            lasso.Up(lassoCtx, new Vec(20, 140));
+            Check("Лассо: выделяет объекты внутри области",
+                lassoStore.Selection.Count == 1 && lassoStore.Selection[0] == first.Id,
+                lassoStore.Selection.Count + " выбрано");
+            Check("Лассо: иконка инструмента корректна", Icons.Get("lasso").Bounds.Width > 4);
+        }
+        catch (Exception ex) { Check("Лассо (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
 
         /* ---------- кисти ---------- */
         try
@@ -702,6 +801,36 @@ public static class SelfTest
             var savedShape = savedBrush.Timeline.Layers[0].Frames[0].Elements[0] as ShapeElement;
             Check("Стиль кисти сохраняется в JSON", savedShape != null && savedShape.Brush == "calligraphy",
                 savedShape?.Brush);
+
+            // Резкий зигзаг: раньше сглаживание давало петли и «шипы» — штрих ломался.
+            var zigzag = new List<Vec>
+            {
+                new Vec(0, 0), new Vec(60, 0), new Vec(60, 60), new Vec(120, 0),
+                new Vec(120, 60), new Vec(0, 60), new Vec(0, 0),
+            };
+            var zigzagWidths = Enumerable.Repeat(24.0, zigzag.Count).ToList();
+            var zigzagGeometry = Renderer.BuildRibbonGeometry(zigzag, zigzagWidths, 1, true, false);
+            var zigzagBox = zigzagGeometry == null ? System.Windows.Rect.Empty : zigzagGeometry.Bounds;
+            bool zigzagOk = zigzagGeometry != null
+                && !double.IsNaN(zigzagBox.Width) && !double.IsInfinity(zigzagBox.Width)
+                && zigzagBox.Left > -30 && zigzagBox.Right < 150
+                && zigzagBox.Top > -30 && zigzagBox.Bottom < 90;
+            Check("Кисть: резкий зигзаг без петель и выбросов", zigzagOk,
+                zigzagBox.IsEmpty ? "нет геометрии" : zigzagBox.Left + "," + zigzagBox.Top + " " +
+                zigzagBox.Width + "×" + zigzagBox.Height);
+
+            var smoothSharp = new List<Vec>();
+            var smoothSharpWidths = new List<double>();
+            Geo.SmoothPolyline(new List<Vec> { new Vec(0, 0), new Vec(50, 0), new Vec(50, 50) },
+                new List<double> { 10, 10, 10 }, 0, smoothSharp, smoothSharpWidths);
+            double smoothMaxX = smoothSharp.Max(p => p.X);
+            double smoothMaxY = smoothSharp.Max(p => p.Y);
+            double smoothMinX = smoothSharp.Min(p => p.X);
+            double smoothMinY = smoothSharp.Min(p => p.Y);
+            Check("Сглаживание: без петель и больших выбросов",
+                smoothMinX >= -12 && smoothMinY >= -12 && smoothMaxX <= 62 && smoothMaxY <= 62,
+                "x " + smoothMinX.ToString("0.##") + "…" + smoothMaxX.ToString("0.##") +
+                ", y " + smoothMinY.ToString("0.##") + "…" + smoothMaxY.ToString("0.##"));
         }
         catch (Exception ex) { Check("Кисти (исключение)", false, ex.GetType().Name + ": " + ex.Message); }
 

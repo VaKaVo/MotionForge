@@ -236,7 +236,9 @@ public static class Geo
         if (points == null || widths == null || outPoints == null || outWidths == null) return;
         int n = Math.Min(points.Count, widths.Count);
         if (n < 2) return;
-        samples = Math.Max(2, Math.Min(24, samples));
+        // samples <= 0 — плотность подбирается по длине сегмента (примерно каждые 0,8 px),
+        // иначе на быстрых движениях (длинные сегменты) штрих получается гранёным.
+        samples = Math.Max(0, Math.Min(24, samples));
 
         for (int i = 0; i < n - 1; i++)
         {
@@ -248,31 +250,99 @@ public static class Geo
             double w1 = widths[i];
             double w2 = widths[i + 1];
             double w3 = widths[Math.Min(i + 2, n - 1)];
-            for (int s = 0; s < samples; s++)
+
+            int steps = samples;
+            if (steps <= 0)
             {
-                double t = (double)s / samples;
-                outPoints.Add(CatmullRom(p0, p1, p2, p3, t));
-                outWidths.Add(CatmullRom(w0, w1, w2, w3, t));
+                double len = Distance(p1, p2);
+                steps = (int)Math.Max(2, Math.Min(24, Math.Ceiling(len / 0.8)));
+            }
+
+            for (int s = 0; s < steps; s++)
+            {
+                double t = (double)s / steps;
+                outPoints.Add(CatmullRomCentripetal(p0, p1, p2, p3, t));
+                // Толщину ведём линейно со сглаживанием: у равномерного сплайна она «выстреливает»
+                // на резких поворотах и штрих вспухает.
+                double st = t * t * (3 - 2 * t);
+                outWidths.Add(w1 + (w2 - w1) * st);
             }
         }
         outPoints.Add(points[n - 1]);
         outWidths.Add(widths[n - 1]);
     }
 
-    private static Vec CatmullRom(Vec p0, Vec p1, Vec p2, Vec p3, double t)
+    private static double Distance(Vec a, Vec b)
     {
-        double x = CatmullRom(p0.X, p1.X, p2.X, p3.X, t);
-        double y = CatmullRom(p0.Y, p1.Y, p2.Y, p3.Y, t);
-        return new Vec(x, y);
+        double dx = b.X - a.X, dy = b.Y - a.Y;
+        return Math.Sqrt(dx * dx + dy * dy);
     }
 
-    private static double CatmullRom(double p0, double p1, double p2, double p3, double t)
+    /// <summary>
+    /// Центростремительный Catmull-Rom (alpha = 0,5). В отличие от равномерного,
+    /// не даёт петель и выбросов на резких поворотах и неравномерных точках —
+    /// именно из-за них «ломались» быстрые штрихи кистью.
+    /// </summary>
+    private static Vec CatmullRomCentripetal(Vec p0, Vec p1, Vec p2, Vec p3, double t)
     {
-        double t2 = t * t, t3 = t2 * t;
-        return 0.5 * (2 * p1
-                      + (-p0 + p2) * t
-                      + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
-                      + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+        double t0 = 0;
+        double t1 = t0 + Math.Sqrt(Distance(p0, p1));
+        double t2 = t1 + Math.Sqrt(Distance(p1, p2));
+        double t3 = t2 + Math.Sqrt(Distance(p2, p3));
+        if (t1 - t0 < 1e-6) t1 = t0 + 1e-6;
+        if (t2 - t1 < 1e-6) t2 = t1 + 1e-6;
+        if (t3 - t2 < 1e-6) t3 = t2 + 1e-6;
+
+        double u = t1 + (t2 - t1) * t;
+
+        Vec a1 = p0 * ((t1 - u) / (t1 - t0)) + p1 * ((u - t0) / (t1 - t0));
+        Vec a2 = p1 * ((t2 - u) / (t2 - t1)) + p2 * ((u - t1) / (t2 - t1));
+        Vec a3 = p2 * ((t3 - u) / (t3 - t2)) + p3 * ((u - t2) / (t3 - t2));
+
+        Vec b1 = a1 * ((t2 - u) / (t2 - t0)) + a2 * ((u - t0) / (t2 - t0));
+        Vec b2 = a2 * ((t3 - u) / (t3 - t1)) + a3 * ((u - t1) / (t3 - t1));
+
+        return b1 * ((t2 - u) / (t2 - t1)) + b2 * ((u - t1) / (t2 - t1));
+    }
+
+    /// <summary>
+    /// Пересэмплирование ломаной с постоянным шагом: нормали в «ленте» считаются
+    /// устойчиво, без заломов на резких поворотах.
+    /// </summary>
+    public static void Resample(IList<Vec> points, IList<double> widths, double spacing,
+        List<Vec> outPoints, List<double> outWidths)
+    {
+        int n = Math.Min(points.Count, widths.Count);
+        if (n < 2) return;
+        spacing = Math.Max(0.05, spacing);
+
+        outPoints.Add(points[0]);
+        outWidths.Add(widths[0]);
+        double carry = 0;
+        for (int i = 0; i < n - 1; i++)
+        {
+            Vec a = points[i], b = points[i + 1];
+            double wa = widths[i], wb = widths[i + 1];
+            double len = Distance(a, b);
+            if (len < 1e-9) continue;
+            double pos = spacing - carry;
+            while (pos <= len)
+            {
+                double t = pos / len;
+                outPoints.Add(new Vec(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t));
+                outWidths.Add(wa + (wb - wa) * t);
+                pos += spacing;
+            }
+            carry = len - (pos - spacing);
+        }
+
+        Vec lastPoint = points[n - 1];
+        Vec prev = outPoints[outPoints.Count - 1];
+        if (Distance(prev, lastPoint) > spacing * 0.25)
+        {
+            outPoints.Add(lastPoint);
+            outWidths.Add(widths[n - 1]);
+        }
     }
 
     /// <summary>Упрощение линии (алгоритм Дугласа-Пекера) — чтобы росчерк не весил мегабайты.</summary>

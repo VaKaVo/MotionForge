@@ -213,6 +213,10 @@ public static class Renderer
             return;
         }
 
+        // Следы ластика: вырезаем области прямо из геометрии — объект остаётся целым,
+        // а «дырка» появляется ровно там, где провели ластиком.
+        Geometry erase = shape.HasErase ? BuildEraseGeometry(shape.Erase) : null;
+
         // Штрих кистью: профиль толщины + стиль кисти (маркер, каллиграфия, аэрограф).
         string preset = shape.Brush ?? "";
         bool hasWidths = shape.Widths != null && shape.Widths.Count == points.Count;
@@ -233,13 +237,13 @@ public static class Renderer
                     var haloWidths = new List<double>(widths.Count);
                     foreach (double w in widths) haloWidths.Add(w * 2.6);
                     var halo = GetBrush(color, 0.14);
-                    if (halo != null) DrawRibbon(dc, points, haloWidths, halo, strokeScale, shape.Smooth);
-                    DrawRibbon(dc, points, widths, GetBrush(color, 0.62) ?? brush, strokeScale, shape.Smooth);
+                    if (halo != null) DrawRibbon(dc, points, haloWidths, halo, strokeScale, shape.Smooth, false, erase);
+                    DrawRibbon(dc, points, widths, GetBrush(color, 0.62) ?? brush, strokeScale, shape.Smooth, false, erase);
                     return;
                 }
 
                 var ink = preset == "marker" ? (GetBrush(color, 0.85) ?? brush) : brush;
-                DrawRibbon(dc, points, widths, ink, strokeScale, shape.Smooth, preset == "marker");
+                DrawRibbon(dc, points, widths, ink, strokeScale, shape.Smooth, preset == "marker", erase);
                 return;
             }
         }
@@ -247,7 +251,70 @@ public static class Renderer
         var geometry = BuildGeometry(points, shape.Closed, shape.Smooth);
         Brush fill = shape.Filled && shape.Closed ? GetBrush(ev.Fill ?? shape.Fill, 1) : null;
         Pen pen = shape.Stroked ? GetPen(ev.Stroke ?? shape.Stroke, Math.Max(0.1, ev.StrokeWidth), 1) : null;
-        dc.DrawGeometry(fill, pen, geometry);
+
+        if (erase == null)
+        {
+            dc.DrawGeometry(fill, pen, geometry);
+            return;
+        }
+
+        // Заливка и обводка режутся отдельно: у них могут быть разные цвета.
+        if (fill != null) dc.DrawGeometry(fill, null, CutOut(geometry, erase));
+        if (pen != null)
+        {
+            Geometry outline = geometry.GetWidenedPathGeometry(pen);
+            dc.DrawGeometry(pen.Brush, null, CutOut(outline, erase));
+        }
+    }
+
+    /// <summary>Вычитает из геометрии область ластика (null — если стирать нечего).</summary>
+    public static Geometry CutOut(Geometry shape, Geometry erase)
+    {
+        if (shape == null) return null;
+        if (erase == null) return shape;
+        var result = Geometry.Combine(shape, erase, GeometryCombineMode.Exclude, null);
+        result.Freeze();
+        return result;
+    }
+
+    /// <summary>Геометрия следов ластика: путь, «раздутый» до диаметра ластика.</summary>
+    public static Geometry BuildEraseGeometry(IList<ErasePath> paths)
+    {
+        if (paths == null || paths.Count == 0) return null;
+        Geometry result = null;
+        foreach (var path in paths)
+        {
+            if (path == null || path.Points == null || path.Points.Count == 0) continue;
+            double radius = Math.Max(0.4, path.Radius);
+            Geometry part;
+            if (path.Points.Count == 1)
+            {
+                part = new EllipseGeometry(new Point(path.Points[0].X, path.Points[0].Y), radius, radius);
+            }
+            else
+            {
+                var line = new PathGeometry { FillRule = FillRule.Nonzero };
+                var figure = new PathFigure
+                {
+                    StartPoint = new Point(path.Points[0].X, path.Points[0].Y),
+                    IsClosed = false,
+                };
+                for (int i = 1; i < path.Points.Count; i++)
+                    figure.Segments.Add(new LineSegment(new Point(path.Points[i].X, path.Points[i].Y), true));
+                line.Figures.Add(figure);
+                var pen = new Pen(Brushes.Black, radius * 2)
+                {
+                    StartLineCap = PenLineCap.Round,
+                    EndLineCap = PenLineCap.Round,
+                    LineJoin = PenLineJoin.Round,
+                };
+                part = line.GetWidenedPathGeometry(pen);
+            }
+            part.Freeze();
+            result = result == null ? part : Geometry.Combine(result, part, GeometryCombineMode.Union, null);
+        }
+        if (result != null) result.Freeze();
+        return result;
     }
 
     /// <summary>
@@ -255,63 +322,140 @@ public static class Renderer
     /// соединяем в замкнутый контур и заливаем. Торцы скругляются.
     /// </summary>
     public static void DrawRibbon(DrawingContext dc, IList<Vec> points, IList<double> widths, Brush brush, double scale,
-        bool smooth = false, bool flatCaps = false)
+        bool smooth = false, bool flatCaps = false, Geometry erase = null)
     {
-        if (points == null || widths == null || brush == null) return;
-        int n = Math.Min(points.Count, widths.Count);
-        if (n < 2) return;
+        var geometry = BuildRibbonGeometry(points, widths, scale, smooth, flatCaps);
+        if (geometry == null || brush == null) return;
+        dc.DrawGeometry(brush, null, CutOut(geometry, erase));
+    }
 
-        IList<Vec> pts = points;
-        IList<double> ws = widths;
+    /// <summary>
+    /// Геометрия «ленты» переменной толщины. Точки пересэмплируются с постоянным шагом,
+    /// а смещение ограничено miter-лимитом: на резких поворотах лента не складывается
+    /// сама в себя и не даёт заломов.
+    /// </summary>
+    public static Geometry BuildRibbonGeometry(IList<Vec> points, IList<double> widths, double scale,
+        bool smooth, bool flatCaps)
+    {
+        if (points == null || widths == null) return null;
+        int n = Math.Min(points.Count, widths.Count);
+        if (n < 2) return null;
+
+        List<Vec> pts;
+        List<double> ws;
         if (smooth && n >= 3)
         {
-            var densePoints = new List<Vec>();
-            var denseWidths = new List<double>();
-            Geo.SmoothPolyline(points, widths, 8, densePoints, denseWidths);
-            if (densePoints.Count >= 2)
-            {
-                pts = densePoints;
-                ws = denseWidths;
-                n = densePoints.Count;
-            }
+            pts = new List<Vec>();
+            ws = new List<double>();
+            Geo.SmoothPolyline(points, widths, 0, pts, ws);
+            if (pts.Count < 2) return null;
+        }
+        else
+        {
+            pts = new List<Vec>(n);
+            ws = new List<double>(n);
+            for (int i = 0; i < n; i++) { pts.Add(points[i]); ws.Add(widths[i]); }
         }
 
-        var left = new List<Vec>(n);
-        var right = new List<Vec>(n);
-        for (int i = 0; i < n; i++)
+        // Постоянный шаг: чем толще штрих, тем реже можно ставить точки.
+        double average = 0;
+        for (int i = 0; i < ws.Count; i++) average += ws[i];
+        average = Math.Max(0.5, average / Math.Max(1, ws.Count) * scale);
+        double spacing = Math.Max(0.6, Math.Min(6, average * 0.45));
+
+        var resampledPoints = new List<Vec>();
+        var resampledWidths = new List<double>();
+        Geo.Resample(pts, ws, spacing, resampledPoints, resampledWidths);
+        if (resampledPoints.Count < 2) return null;
+        pts = resampledPoints;
+        ws = resampledWidths;
+        int m = pts.Count;
+
+        var left = new List<Vec>(m);
+        var right = new List<Vec>(m);
+        for (int i = 0; i < m; i++)
         {
             Vec prev = pts[Math.Max(0, i - 1)];
-            Vec next = pts[Math.Min(n - 1, i + 1)];
-            double dx = next.X - prev.X;
-            double dy = next.Y - prev.Y;
-            double len = Math.Sqrt(dx * dx + dy * dy);
-            if (len < 1e-9) { dx = 1; dy = 0; len = 1; }
-            double nx = -dy / len;
-            double ny = dx / len;
-            double half = Math.Max(0.15, ws[i] * scale) / 2;
-            left.Add(new Vec(pts[i].X + nx * half, pts[i].Y + ny * half));
-            right.Add(new Vec(pts[i].X - nx * half, pts[i].Y - ny * half));
+            Vec next = pts[Math.Min(m - 1, i + 1)];
+            Vec d1 = Normalize(pts[i] - prev);
+            Vec d2 = Normalize(next - pts[i]);
+            if (d1.X == 0 && d1.Y == 0) d1 = d2;
+            if (d2.X == 0 && d2.Y == 0) d2 = d1;
+
+            Vec bisector = d1 + d2;
+            double length = Math.Sqrt(bisector.X * bisector.X + bisector.Y * bisector.Y);
+            if (length < 0.15)
+            {
+                // Разворот почти на 180°: берём нормаль к текущему сегменту.
+                bisector = d2;
+                length = 1;
+            }
+            bisector = new Vec(bisector.X / length, bisector.Y / length);
+
+            // 1 / cos(θ/2), ограниченный, чтобы угол не превращался в длинный шип.
+            double miter = Math.Min(2.0, 1.0 / Math.Max(0.5, length));
+            double half = Math.Max(0.15, ws[i] * scale) / 2 * miter;
+
+            var normal = new Vec(-bisector.Y, bisector.X);
+            left.Add(pts[i] + normal * half);
+            right.Add(pts[i] - normal * half);
         }
 
         // Nonzero (а не EvenOdd): самопересечения росчерка не вырезают дырки.
-        var geometry = new StreamGeometry { FillRule = FillRule.Nonzero };
-        using (StreamGeometryContext ctx = geometry.Open())
+        // Круглые торцы добавляем в ту же геометрию и с той же намоткой — иначе
+        // в месте стыка торца и штриха контуры «гасят» друг друга и появляется кольцо.
+        var ribbon = new StreamGeometry { FillRule = FillRule.Nonzero };
+        using (StreamGeometryContext ctx = ribbon.Open())
         {
             ctx.BeginFigure(new Point(left[0].X, left[0].Y), true, true);
-            for (int i = 1; i < n; i++) ctx.LineTo(new Point(left[i].X, left[i].Y), true, false);
-            for (int i = n - 1; i >= 0; i--) ctx.LineTo(new Point(right[i].X, right[i].Y), true, false);
-        }
-        geometry.Freeze();
-        dc.DrawGeometry(brush, null, geometry);
+            for (int i = 1; i < m; i++) ctx.LineTo(new Point(left[i].X, left[i].Y), true, false);
+            for (int i = m - 1; i >= 0; i--) ctx.LineTo(new Point(right[i].X, right[i].Y), true, false);
 
-        // Круглые торцы — отдельными кругами: надёжнее дуг в контуре.
-        if (!flatCaps)
-        {
-            double r0 = Math.Max(0.15, ws[0] * scale) / 2;
-            double rn = Math.Max(0.15, ws[n - 1] * scale) / 2;
-            dc.DrawEllipse(brush, null, new Point(pts[0].X, pts[0].Y), r0, r0);
-            dc.DrawEllipse(brush, null, new Point(pts[n - 1].X, pts[n - 1].Y), rn, rn);
+            if (!flatCaps)
+            {
+                var loop = new List<Vec>(m * 2);
+                loop.AddRange(left);
+                for (int i = m - 1; i >= 0; i--) loop.Add(right[i]);
+                double direction = SignedArea(loop) >= 0 ? 1 : -1;
+
+                double r0 = Math.Max(0.15, ws[0] * scale) / 2;
+                double rn = Math.Max(0.15, ws[m - 1] * scale) / 2;
+                AddCircle(ctx, pts[0], r0, direction);
+                AddCircle(ctx, pts[m - 1], rn, direction);
+            }
         }
+        ribbon.Freeze();
+        return ribbon;
+    }
+
+    /// <summary>Площадь замкнутого контура со знаком (для согласованной намотки фигур).</summary>
+    private static double SignedArea(IList<Vec> points)
+    {
+        double sum = 0;
+        for (int i = 0; i < points.Count; i++)
+        {
+            Vec a = points[i], b = points[(i + 1) % points.Count];
+            sum += a.X * b.Y - b.X * a.Y;
+        }
+        return sum * 0.5;
+    }
+
+    private static void AddCircle(StreamGeometryContext ctx, Vec center, double radius, double direction)
+    {
+        const int steps = 18;
+        ctx.BeginFigure(new Point(center.X + radius, center.Y), true, true);
+        for (int i = 1; i <= steps; i++)
+        {
+            double angle = direction * 2 * Math.PI * i / steps;
+            ctx.LineTo(new Point(center.X + radius * Math.Cos(angle), center.Y + radius * Math.Sin(angle)), false, false);
+        }
+    }
+
+    private static Vec Normalize(Vec v)
+    {
+        double len = Math.Sqrt(v.X * v.X + v.Y * v.Y);
+        if (len < 1e-9) return new Vec(0, 0);
+        return new Vec(v.X / len, v.Y / len);
     }
 
     /// <summary>Толщина штриха с учётом стиля кисти.</summary>

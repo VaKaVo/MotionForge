@@ -21,7 +21,7 @@ jobs:
       - name: Сборка (Release)
         run: dotnet build MotionForge.csproj -c Release --nologo
 
-      - name: Самопроверка (125 проверок)
+      - name: Самопроверка (153 проверки)
         shell: pwsh
         run: |
           $exe = "bin/Release/net10.0-windows/MotionForge.exe"

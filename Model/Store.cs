@@ -29,6 +29,8 @@ public class ToolOptions
     public double BrushAngle = 45;
     /// <summary>Сила сглаживания штриха, 0…100.</summary>
     public double Smoothing = 50;
+    /// <summary>Режим ластика: normal — всё, fills — только заливка, lines — только контуры.</summary>
+    public string EraserMode = "normal";
 }
 
 public class EditPathEntry

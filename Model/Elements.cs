@@ -66,20 +66,52 @@ public class ShapeElement : Element
     /// <summary>Наклон пера каллиграфии в градусах (используется только стилем calligraphy).</summary>
     public double BrushAngle { get; set; } = 45;
 
+    /// <summary>
+    /// Следы ластика в координатах фигуры: области, которые вырезаются из рисунка.
+    /// Так ластик стирает ровно под курсором, не разрезая объект на куски.
+    /// </summary>
+    public List<ErasePath> Erase { get; set; }
+
+    [JsonIgnore] public bool HasErase => Erase != null && Erase.Count > 0;
+
     public override ElementKind Kind => ElementKind.Shape;
     public override string TypeName => "Фигура";
 
-    public override Element Clone() => CopyInto(new ShapeElement
+    public override Element Clone()
     {
-        Points = new List<Vec>(Points),
-        Closed = Closed, Fill = Fill, Stroke = Stroke, StrokeWidth = StrokeWidth,
-        Smooth = Smooth, Filled = Filled, Stroked = Stroked,
-        Widths = Widths == null ? null : new List<double>(Widths),
-        Brush = Brush, BrushAngle = BrushAngle,
-    });
+        var copy = CopyInto(new ShapeElement
+        {
+            Points = new List<Vec>(Points),
+            Closed = Closed, Fill = Fill, Stroke = Stroke, StrokeWidth = StrokeWidth,
+            Smooth = Smooth, Filled = Filled, Stroked = Stroked,
+            Widths = Widths == null ? null : new List<double>(Widths),
+            Brush = Brush, BrushAngle = BrushAngle,
+        });
+        if (Erase != null)
+        {
+            copy.Erase = new List<ErasePath>(Erase.Count);
+            foreach (var e in Erase) copy.Erase.Add(e.Clone());
+        }
+        return copy;
+    }
 
     /// <summary>Ширина/высота фигуры в её собственных координатах.</summary>
     public RectD LocalBox() => RectD.FromPoints(Points, Stroked ? StrokeWidth / 2 : 0);
+
+    /// <summary>Убирает следы ластика (например, при копировании стиля или очистке).</summary>
+    public void ClearErase() => Erase = null;
+}
+
+/// <summary>Один след ластика: путь и радиус в координатах фигуры.</summary>
+public class ErasePath
+{
+    public List<Vec> Points { get; set; } = new List<Vec>();
+    public double Radius { get; set; } = 6;
+
+    public ErasePath Clone()
+    {
+        return new ErasePath { Points = new List<Vec>(Points), Radius = Radius };
+    }
 }
 
 public class TextElement : Element

@@ -168,6 +168,9 @@ public partial class MainWindow : Window, IAppShell
         _store.Opts.FreehandSmooth = settings.SmoothStrokes;
         _store.Opts.BrushPreset = string.IsNullOrEmpty(settings.BrushPreset) ? "brush" : settings.BrushPreset;
         _store.Opts.Smoothing = Math.Max(0, Math.Min(100, settings.Smoothing));
+        _store.Opts.EraserMode = settings.EraserMode == "fills" || settings.EraserMode == "lines"
+            ? settings.EraserMode
+            : "normal";
         Store.UndoLimit = Math.Max(10, Math.Min(500, settings.UndoLimit));
         Plugins.PythonCommand = string.IsNullOrWhiteSpace(settings.PythonPath) ? "python" : settings.PythonPath.Trim();
 

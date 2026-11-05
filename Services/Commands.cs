@@ -115,6 +115,7 @@ public static class Commands
     {
         Add("tool.select", "Инструменты", "Выделение", "V", s => s.Store.SetTool("select"), null, s => s.Store.ToolId == "select");
         Add("tool.subselect", "Инструменты", "Частичное выделение (точки)", "A", s => s.Store.SetTool("subselect"), null, s => s.Store.ToolId == "subselect");
+        Add("tool.lasso", "Инструменты", "Лассо", "L", s => s.Store.SetTool("lasso"), null, s => s.Store.ToolId == "lasso");
         Add("tool.transform", "Инструменты", "Свободное трансформирование", "Q", s => s.Store.SetTool("transform"), null, s => s.Store.ToolId == "transform");
         Add("tool.line", "Инструменты", "Линия", "N", s => s.Store.SetTool("line"), null, s => s.Store.ToolId == "line");
         Add("tool.rect", "Инструменты", "Прямоугольник", "R", s => s.Store.SetTool("rect"), null, s => s.Store.ToolId == "rect");
